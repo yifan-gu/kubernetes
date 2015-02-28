@@ -993,7 +993,31 @@ func (kl *Kubelet) killContainersInPod(pod *api.BoundPod, dockerContainers docke
 
 type empty struct{}
 
-func (kl *Kubelet) syncPod(pod *api.BoundPod, dockerContainers dockertools.DockerContainers) error {
+func (kl *Kubelet) makeDataDirs(pod *api.BoundPod) error {
+	uid := pod.UID
+	if err := os.Mkdir(kl.getPodDir(uid), 0750); err != nil && !os.IsExist(err) {
+		return err
+	}
+	if err := os.Mkdir(kl.getPodVolumesDir(uid), 0750); err != nil && !os.IsExist(err) {
+		return err
+	}
+	if err := os.Mkdir(kl.getPodPluginsDir(uid), 0750); err != nil && !os.IsExist(err) {
+		return err
+	}
+
+	podVolumes, err := kl.mountExternalVolumes(pod)
+	if err != nil {
+		if ref != nil {
+			record.Eventf(ref, "failedMount",
+				"Unable to mount volumes for pod %q: %v", podFullName, err)
+		}
+		glog.Errorf("Unable to mount volumes for pod %q: %v; skipping pod", podFullName, err)
+		return err
+	}
+	return nil
+}
+
+func (kl *Kubelet) syncPod(pod *api.BoundPod, runningPod *api.Pod) error {
 	podFullName := GetPodFullName(pod)
 	uid := pod.UID
 	containersToKeep := make(map[dockertools.DockerID]empty)
@@ -1005,50 +1029,7 @@ func (kl *Kubelet) syncPod(pod *api.BoundPod, dockerContainers dockertools.Docke
 		glog.Errorf("Couldn't make a ref to pod %q: '%v'", podFullName, err)
 	}
 
-	// Make data dirs.
-	if err := os.Mkdir(kl.getPodDir(uid), 0750); err != nil && !os.IsExist(err) {
-		return err
-	}
-	if err := os.Mkdir(kl.getPodVolumesDir(uid), 0750); err != nil && !os.IsExist(err) {
-		return err
-	}
-	if err := os.Mkdir(kl.getPodPluginsDir(uid), 0750); err != nil && !os.IsExist(err) {
-		return err
-	}
-
-	// Make sure we have a pod infra container
-	var podInfraContainerID dockertools.DockerID
-	if podInfraDockerContainer, found, _ := dockerContainers.FindPodContainer(podFullName, uid, dockertools.PodInfraContainerName); found {
-		podInfraContainerID = dockertools.DockerID(podInfraDockerContainer.ID)
-	} else {
-		glog.V(2).Infof("Pod infra container doesn't exist for pod %q, killing and re-creating the pod", podFullName)
-		count, err := kl.killContainersInPod(pod, dockerContainers)
-		if err != nil {
-			return err
-		}
-		podInfraContainerID, err = kl.createPodInfraContainer(pod)
-		if err != nil {
-			glog.Errorf("Failed to introspect pod infra container: %v; Skipping pod %q", err, podFullName)
-			return err
-		}
-		if count > 0 {
-			// Re-list everything, otherwise we'll think we're ok.
-			dockerContainers, err = dockertools.GetKubeletDockerContainers(kl.dockerClient, false)
-			if err != nil {
-				glog.Errorf("Error listing containers %#v", dockerContainers)
-				return err
-			}
-		}
-	}
-	containersToKeep[podInfraContainerID] = empty{}
-
-	podVolumes, err := kl.mountExternalVolumes(pod)
-	if err != nil {
-		if ref != nil {
-			record.Eventf(ref, "failedMount",
-				"Unable to mount volumes for pod %q: %v", podFullName, err)
-		}
-		glog.Errorf("Unable to mount volumes for pod %q: %v; skipping pod", podFullName, err)
+	if err = kl.makeDataDirss(pod); err != nil {
 		return err
 	}
 
@@ -1057,6 +1038,36 @@ func (kl *Kubelet) syncPod(pod *api.BoundPod, dockerContainers dockertools.Docke
 		glog.Errorf("Unable to get pod with name %q and uid %q info with error(%v)", podFullName, uid, err)
 	}
 
+	// for each container in pod,
+	// 1. test if spec changed, if so, restart the container(restart policy). For now, restart whole container.
+	//    if not changed, probe the container, if unhealthy, restart the container(restart policy), For now, restart whole container.
+	// 2. Kill all containers in the pod, not identified. readiness.
+
+	for _, container := range pod.Containers {
+		found := kl.findContainer(runningPod, container)
+		containerChanged := false
+		containerHealthy := true
+
+		if !found {
+			kl.runContainer(container)
+			continue
+		}
+
+		// TODO(yifan): should find a way to know whether it exits normally.
+		if containerChanged || !containerHealthy {
+			kl.restartContainer(container)
+		}
+		kl.removeContainer(pod.Containers, container)
+	}
+	// Kill all unidentified containers.
+	for _, container := range pod.Containers {
+		kl.killContainer(container)
+	}
+
+	return nil
+}
+
+func something() error {
 	for _, container := range pod.Spec.Containers {
 		expectedHash := dockertools.HashContainer(&container)
 		dockerContainerName := dockertools.BuildDockerName(uid, podFullName, &container)
@@ -1276,13 +1287,13 @@ func (kl *Kubelet) SyncPods(pods []api.BoundPod) error {
 	desiredContainers := make(map[podContainer]empty)
 	desiredPods := make(map[types.UID]empty)
 
-	dockerContainers, err := kl.dockerCache.RunningContainers()
+	runningPods, err := kl.rocket.RunningPods()
 	if err != nil {
-		glog.Errorf("Error listing containers: %#v", dockerContainers)
+		glog.Errorf("Error listing running pods: %v", error)
 		return err
 	}
 
-	// Check for any containers that need starting
+	// Check for any containers that need starting.
 	for ix := range pods {
 		pod := &pods[ix]
 		podFullName := GetPodFullName(pod)
@@ -1302,6 +1313,24 @@ func (kl *Kubelet) SyncPods(pods []api.BoundPod) error {
 	// Stop the workers for no-longer existing pods.
 	kl.podWorkers.ForgetNonExistingPodWorkers(desiredPods)
 
+	// Kill any pods we don't need.
+	for _, pod := range runningPods {
+		// Don't kill pods that are in the desired pods.
+		if _, found := desiredPods[uid]; found {
+			// syncPod() will handle this one.
+			continue
+		}
+		if source := podAnnotations[ConfigSourceAnnotationKey]; !kl.sourceReady(source) {
+			// If the source for this container is not ready, skip deletion, so that we don't accidentally
+			// delete containers for sources that haven't reported yet.
+			glog.V(4).Infof("Skipping delete of container (%q), source (%s) aren't ready yet.", podFullName, source)
+			continue
+		}
+		glog.V(1).Infof("Killing unwanted container %+v", pc)
+		err = kl.killPod(pod)
+	}
+
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	// Kill any containers we don't need.
 	killed := []string{}
 	for ix := range dockerContainers {
@@ -1329,6 +1358,7 @@ func (kl *Kubelet) SyncPods(pods []api.BoundPod) error {
 			}
 		}
 	}
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	running, err := dockertools.GetRunningContainers(kl.dockerClient, killed)
 	if err != nil {
