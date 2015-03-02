@@ -26,7 +26,7 @@ import (
 	"github.com/golang/glog"
 )
 
-type syncPodFunType func(*api.BoundPod, dockertools.DockerContainers) error
+type syncPodFunType func(*api.BoundPod, *api.Pod) error
 
 // TODO(wojtek-t) Add unit tests for this type.
 type podWorkers struct {
@@ -76,7 +76,7 @@ func (p *podWorkers) managePodLoop(podUpdates <-chan api.BoundPod) {
 	}
 }
 
-func (p *podWorkers) UpdatePod(pod api.BoundPod, runningPod api.BoundPod) {
+func (p *podWorkers) UpdatePod(pod api.BoundPod) {
 	uid := pod.UID
 	var podUpdates chan api.BoundPod
 	var exists bool

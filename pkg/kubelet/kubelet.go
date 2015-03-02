@@ -992,7 +992,7 @@ func (kl *Kubelet) killContainersInPod(pod *api.BoundPod, dockerContainers docke
 
 type empty struct{}
 
-func (kl *Kubelet) makeDataDirs(pod *api.BoundPod) error {
+func (kl *Kubelet) makeDataDirs(pod *api.BoundPod, ref *api.ObjectReference) error {
 	uid := pod.UID
 	if err := os.Mkdir(kl.getPodDir(uid), 0750); err != nil && !os.IsExist(err) {
 		return err
@@ -1004,6 +1004,29 @@ func (kl *Kubelet) makeDataDirs(pod *api.BoundPod) error {
 		return err
 	}
 
+	return nil
+}
+
+func (kl *Kubelet) syncPod(pod *api.BoundPod, runningPod *api.Pod) error {
+	podFullName := GetPodFullName(pod)
+	uid := pod.UID
+	glog.V(4).Infof("Syncing Pod, podFullName: %q, uid: %q", podFullName, uid)
+
+	ref, err := api.GetReference(pod)
+	if err != nil {
+		glog.Errorf("Couldn't make a ref to pod %q: '%v'", podFullName, err)
+	}
+
+	if err := kl.makeDataDirs(pod, ref); err != nil {
+		return err
+	}
+
+	podStatus, err := kl.GetPodStatus(podFullName, uid)
+	if err != nil {
+		glog.Errorf("Unable to get pod with name %q and uid %q info with error(%v)", podFullName, uid, err)
+	}
+	_ = podStatus
+
 	podVolumes, err := kl.mountExternalVolumes(pod)
 	if err != nil {
 		if ref != nil {
@@ -1013,29 +1036,7 @@ func (kl *Kubelet) makeDataDirs(pod *api.BoundPod) error {
 		glog.Errorf("Unable to mount volumes for pod %q: %v; skipping pod", podFullName, err)
 		return err
 	}
-	return nil
-}
-
-func (kl *Kubelet) syncPod(pod *api.BoundPod, runningPod *api.Pod) error {
-	podFullName := GetPodFullName(pod)
-	uid := pod.UID
-	containersToKeep := make(map[dockertools.DockerID]empty)
-	killedContainers := make(map[dockertools.DockerID]empty)
-	glog.V(4).Infof("Syncing Pod, podFullName: %q, uid: %q", podFullName, uid)
-
-	ref, err := api.GetReference(pod)
-	if err != nil {
-		glog.Errorf("Couldn't make a ref to pod %q: '%v'", podFullName, err)
-	}
-
-	if err = kl.makeDataDirs(pod); err != nil {
-		return err
-	}
-
-	podStatus, err := kl.GetPodStatus(podFullName, uid)
-	if err != nil {
-		glog.Errorf("Unable to get pod with name %q and uid %q info with error(%v)", podFullName, uid, err)
-	}
+	_ = podVolumes
 
 	// for each container in pod,
 	// 1. test if spec changed, if so, restart the container(restart policy). For now, restart whole container.
@@ -1075,8 +1076,8 @@ func (kl *Kubelet) syncPod(pod *api.BoundPod, runningPod *api.Pod) error {
 		}
 	}
 	// Kill all unidentified containers.
-	for _, container := range runningPod.Containers {
-		if err = KillContainer(container); err != nil {
+	for _, container := range runningPod.Spec.Containers {
+		if err = KillContainer(&container, runningPod); err != nil {
 			glog.V(1).Infof("Failed to kill container %q: %v", container.Name, err)
 		}
 	}
@@ -1165,64 +1166,68 @@ func (kl *Kubelet) SyncPods(pods []api.BoundPod) error {
 
 	runningPods, err := ListPods()
 	if err != nil {
-		glog.Errorf("Error listing running pods: %v", error)
+		glog.Errorf("Error listing running pods: %v", err)
 		return err
 	}
 
 	// Check for any containers that need starting.
-	for ix := range pods {
-		pod := &pods[ix]
-		podFullName := GetPodFullName(pod)
-		uid := pod.UID
-		desiredPods[uid] = empty{}
+	for _, pod := range pods {
+		podFullName := GetPodFullName(&pod)
+		desiredPods[pod.UID] = empty{}
 
-		// Add all containers (including net) to the map.
-		desiredContainers[podContainer{podFullName, uid, dockertools.PodInfraContainerName}] = empty{}
+		// Add all containers to the map.
 		for _, cont := range pod.Spec.Containers {
-			desiredContainers[podContainer{podFullName, uid, cont.Name}] = empty{}
+			desiredContainers[podContainer{podFullName, pod.UID, cont.Name}] = empty{}
 		}
 
 		// Run the sync in an async manifest worker.
-		kl.podWorkers.UpdatePod(*pod)
+		kl.podWorkers.UpdatePod(pod)
 	}
 
 	// Stop the workers for no-longer existing pods.
 	kl.podWorkers.ForgetNonExistingPodWorkers(desiredPods)
 
+	var killed []types.UID
 	// Kill any pods we don't need.
 	for _, pod := range runningPods {
-		// Don't kill pods that are in the desired pods.
-		if _, found := desiredPods[uid]; found {
+		if _, found := desiredPods[pod.UID]; found {
 			// syncPod() will handle this one.
 			continue
 		}
+		podFullName := GetPodFullName(&api.BoundPod{pod.TypeMeta, pod.ObjectMeta, pod.Spec})
+		_, _, podAnnotations := ParsePodFullName(podFullName)
 		if source := podAnnotations[ConfigSourceAnnotationKey]; !kl.sourceReady(source) {
 			// If the source for this container is not ready, skip deletion, so that we don't accidentally
 			// delete containers for sources that haven't reported yet.
 			glog.V(4).Infof("Skipping delete of container (%q), source (%s) aren't ready yet.", podFullName, source)
 			continue
 		}
-		glog.V(1).Infof("Killing unwanted container %+v", pc)
-		err = kl.killPod(pod)
+		glog.V(1).Infof("Killing unwanted pod %+v", pod)
+		err = KillPod(pod)
+		if err != nil {
+			glog.Errorf("Error killing pod %+v: %v", pod, err)
+		} else {
+			killed = append(killed, pod.UID)
+		}
 	}
 
-	running, err := dockertools.GetRunningContainers(kl.dockerClient, killed)
-	if err != nil {
-		glog.Errorf("Failed to poll container state: %v", err)
-		return err
-	}
-
-	// Remove any orphaned volumes.
-	err = kl.cleanupOrphanedVolumes(pods, running)
-	if err != nil {
-		return err
-	}
-
-	// Remove any orphaned pods.
-	err = kl.cleanupOrphanedPods(pods)
-	if err != nil {
-		return err
-	}
+	//running, err := dockertools.GetRunningContainers(kl.dockerClient, killed)
+	//if err != nil {
+	//	glog.Errorf("Failed to poll container state: %v", err)
+	//	return err
+	//}
+	//
+	//// Remove any orphaned volumes.
+	//err = kl.cleanupOrphanedVolumes(pods, running)
+	//if err != nil {
+	//	return err
+	//}
+	//
+	//// Remove any orphaned pods.
+	//err = kl.cleanupOrphanedPods(pods)
+	//if err != nil {
+	//	return err
+	//}
 
 	return err
 }

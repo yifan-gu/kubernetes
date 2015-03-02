@@ -28,7 +28,7 @@ import (
 const defaultEndpoint = "/home/yifan/gopher/src/github.com/coreos/rocket/bin/rkt"
 
 // FindContainerInPod finds the container in the pod.
-func FindContainerInPod(container *api.Container, pod api.Pod) (*api.Container, bool) {
+func FindContainerInPod(container *api.Container, pod *api.Pod) (*api.Container, bool) {
 	for _, c := range pod.Spec.Containers {
 		if c.Name == container.Name {
 			return &c, true
@@ -124,6 +124,11 @@ func KillContainer(container *api.Container, pod *api.Pod) error {
 	return nil
 }
 
+func KillPod(pod *api.Pod) error {
+	rkt, _ := rocket.NewRocketRuntime(defaultEndpoint)
+	return rkt.KillPod(pod)
+}
+
 // ListPods lists all the currently running pods.
 func ListPods() ([]*api.Pod, error) {
 	rkt, _ := rocket.NewRocketRuntime(defaultEndpoint)
@@ -132,9 +137,9 @@ func ListPods() ([]*api.Pod, error) {
 }
 
 // Helper, find a pod with the given UID.
-func findPod(uid string, pods []*api.Pod) *api.Pod {
+func findPod(uid types.UID, pods []*api.Pod) *api.Pod {
 	for _, pod := range pods {
-		if pod.UID == types.UID(uid) {
+		if pod.UID == uid {
 			return pod
 		}
 	}
