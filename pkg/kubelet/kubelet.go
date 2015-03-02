@@ -41,7 +41,6 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/metrics"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/volume"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/labels"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/probe"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/tools"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/types"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
@@ -1029,7 +1028,7 @@ func (kl *Kubelet) syncPod(pod *api.BoundPod, runningPod *api.Pod) error {
 		glog.Errorf("Couldn't make a ref to pod %q: '%v'", podFullName, err)
 	}
 
-	if err = kl.makeDataDirss(pod); err != nil {
+	if err = kl.makeDataDirs(pod); err != nil {
 		return err
 	}
 
@@ -1043,167 +1042,44 @@ func (kl *Kubelet) syncPod(pod *api.BoundPod, runningPod *api.Pod) error {
 	//    if not changed, probe the container, if unhealthy, restart the container(restart policy), For now, restart whole container.
 	// 2. Kill all containers in the pod, not identified. readiness.
 
-	for _, container := range pod.Containers {
-		found := kl.findContainer(runningPod, container)
-		containerChanged := false
+	for _, container := range pod.Spec.Containers {
+		runningContainer, found := FindContainerInPod(&container, runningPod)
 		containerHealthy := true
 
 		if !found {
-			kl.runContainer(container)
+			glog.V(3).Infof("pod %q container %q does not exist, creating...", podFullName, container.Name)
+			if err := RunContainerInPod(&container, runningPod); err != nil {
+				glog.Errorf("Error running pod %q container %q: %v", podFullName, container.Name, err)
+			}
+			continue
+		}
+
+		// Container is found, remove the container from the running list
+		// so we can avoid killing it later.
+		removeContainer(runningPod, container)
+
+		expectedHash := HashContainer(&container)
+		hash := HashContainer(runningContainer)
+		containerChanged := expectedHash == hash
+		containerHealthy, err := ProbeContainer(runningContainer)
+		if err != nil {
+			glog.V(1).Infof("liveness/readiness probe errored: %v", err)
 			continue
 		}
 
 		// TODO(yifan): should find a way to know whether it exits normally.
 		if containerChanged || !containerHealthy {
-			kl.restartContainer(container)
+			if err = RestartContainer(&container, runningPod); err != nil {
+				glog.V(1).Infof("Failed to restart container %q: %v", runningContainer.Name, err)
+			}
 		}
-		kl.removeContainer(pod.Containers, container)
 	}
 	// Kill all unidentified containers.
-	for _, container := range pod.Containers {
-		kl.killContainer(container)
-	}
-
-	return nil
-}
-
-func something() error {
-	for _, container := range pod.Spec.Containers {
-		expectedHash := dockertools.HashContainer(&container)
-		dockerContainerName := dockertools.BuildDockerName(uid, podFullName, &container)
-		if dockerContainer, found, hash := dockerContainers.FindPodContainer(podFullName, uid, container.Name); found {
-			containerID := dockertools.DockerID(dockerContainer.ID)
-			glog.V(3).Infof("pod %q container %q exists as %v", podFullName, container.Name, containerID)
-
-			// look for changes in the container.
-			podChanged := hash != 0 && hash != expectedHash
-			if !podChanged {
-				// TODO: This should probably be separated out into a separate goroutine.
-				// If the container's liveness probe is unsuccessful, set readiness to false. If liveness is succesful, do a readiness check and set
-				// readiness accordingly. If the initalDelay since container creation on liveness probe has not passed the probe will return Success.
-				// If the initial delay on the readiness probe has not passed the probe will return Failure.
-				ready := probe.Unknown
-				live, err := kl.probeContainer(container.LivenessProbe, podFullName, uid, podStatus, container, dockerContainer, probe.Success)
-				if live == probe.Success {
-					ready, _ = kl.probeContainer(container.ReadinessProbe, podFullName, uid, podStatus, container, dockerContainer, probe.Failure)
-				}
-				if err != nil {
-					glog.V(1).Infof("liveness/readiness probe errored: %v", err)
-					containersToKeep[containerID] = empty{}
-					continue
-				}
-				if ready == probe.Success {
-					kl.readiness.set(dockerContainer.ID, true)
-				} else {
-					kl.readiness.set(dockerContainer.ID, false)
-				}
-				if live == probe.Success {
-					containersToKeep[containerID] = empty{}
-					continue
-				}
-				ref, ok := kl.getRef(containerID)
-				if !ok {
-					glog.Warningf("No ref for pod '%v' - '%v'", containerID, container.Name)
-				} else {
-					record.Eventf(ref, "unhealthy", "Liveness Probe Failed %v - %v", containerID, container.Name)
-				}
-				glog.Infof("pod %q container %q is unhealthy (probe result: %v). Container will be killed and re-created.", podFullName, container.Name, live)
-			} else {
-				glog.Infof("pod %q container %q hash changed (%d vs %d). Container will be killed and re-created.", podFullName, container.Name, hash, expectedHash)
-			}
-			if err := kl.killContainer(dockerContainer); err != nil {
-				glog.V(1).Infof("Failed to kill container %q: %v", dockerContainer.ID, err)
-				continue
-			}
-			killedContainers[containerID] = empty{}
-
-			if podChanged {
-				// Also kill associated pod infra container if the pod changed.
-				if podInfraContainer, found, _ := dockerContainers.FindPodContainer(podFullName, uid, dockertools.PodInfraContainerName); found {
-					if err := kl.killContainer(podInfraContainer); err != nil {
-						glog.V(1).Infof("Failed to kill pod infra container %q: %v", podInfraContainer.ID, err)
-						continue
-					}
-				}
-			}
-		}
-
-		// Check RestartPolicy for container
-		recentContainers, err := dockertools.GetRecentDockerContainersWithNameAndUUID(kl.dockerClient, podFullName, uid, container.Name)
-		if err != nil {
-			glog.Errorf("Error listing recent containers:%s", dockerContainerName)
-			// TODO(dawnchen): error handling here?
-		}
-		// set dead containers to unready state
-		for _, c := range recentContainers {
-			kl.readiness.remove(c.ID)
-		}
-
-		if len(recentContainers) > 0 && pod.Spec.RestartPolicy.Always == nil {
-			if pod.Spec.RestartPolicy.Never != nil {
-				glog.V(3).Infof("Already ran container with name %s, do nothing",
-					dockerContainerName)
-				continue
-			}
-			if pod.Spec.RestartPolicy.OnFailure != nil {
-				// Check the exit code of last run
-				if recentContainers[0].State.ExitCode == 0 {
-					glog.V(3).Infof("Already successfully ran container with name %s, do nothing",
-						dockerContainerName)
-					continue
-				}
-			}
-		}
-
-		glog.V(3).Infof("Container with name %s doesn't exist, creating", dockerContainerName)
-		ref, err := containerRef(pod, &container)
-		if err != nil {
-			glog.Errorf("Couldn't make a ref to pod %v, container %v: '%v'", pod.Name, container.Name, err)
-		}
-		if container.ImagePullPolicy != api.PullNever {
-			present, err := kl.dockerPuller.IsImagePresent(container.Image)
-			if err != nil {
-				if ref != nil {
-					record.Eventf(ref, "failed", "Failed to inspect image %q", container.Image)
-				}
-				glog.Errorf("Failed to inspect image %q: %v; skipping pod %q container %q", container.Image, err, podFullName, container.Name)
-				continue
-			}
-			if container.ImagePullPolicy == api.PullAlways ||
-				(container.ImagePullPolicy == api.PullIfNotPresent && (!present)) {
-				if err := kl.pullImage(container.Image, ref); err != nil {
-					continue
-				}
-			}
-		}
-		// TODO(dawnchen): Check RestartPolicy.DelaySeconds before restart a container
-		namespaceMode := fmt.Sprintf("container:%v", podInfraContainerID)
-		containerID, err := kl.runContainer(pod, &container, podVolumes, namespaceMode, namespaceMode)
-		if err != nil {
-			// TODO(bburns) : Perhaps blacklist a container after N failures?
-			glog.Errorf("Error running pod %q container %q: %v", podFullName, container.Name, err)
-			continue
-		}
-		containersToKeep[containerID] = empty{}
-	}
-
-	// Kill any containers in this pod which were not identified above (guards against duplicates).
-	for id, container := range dockerContainers {
-		curPodFullName, curUUID, _, _ := dockertools.ParseDockerName(container.Names[0])
-		if curPodFullName == podFullName && curUUID == uid {
-			// Don't kill containers we want to keep or those we already killed.
-			_, keep := containersToKeep[id]
-			_, killed := killedContainers[id]
-			if !keep && !killed {
-				glog.V(1).Infof("Killing unwanted container in pod %q: %+v", curUUID, container)
-				err = kl.killContainer(container)
-				if err != nil {
-					glog.Errorf("Error killing container: %v", err)
-				}
-			}
+	for _, container := range runningPod.Containers {
+		if err = KillContainer(container); err != nil {
+			glog.V(1).Infof("Failed to kill container %q: %v", container.Name, err)
 		}
 	}
-
 	return nil
 }
 
@@ -1287,7 +1163,7 @@ func (kl *Kubelet) SyncPods(pods []api.BoundPod) error {
 	desiredContainers := make(map[podContainer]empty)
 	desiredPods := make(map[types.UID]empty)
 
-	runningPods, err := kl.rocket.RunningPods()
+	runningPods, err := ListPods()
 	if err != nil {
 		glog.Errorf("Error listing running pods: %v", error)
 		return err
@@ -1329,36 +1205,6 @@ func (kl *Kubelet) SyncPods(pods []api.BoundPod) error {
 		glog.V(1).Infof("Killing unwanted container %+v", pc)
 		err = kl.killPod(pod)
 	}
-
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// Kill any containers we don't need.
-	killed := []string{}
-	for ix := range dockerContainers {
-		// Don't kill containers that are in the desired pods.
-		podFullName, uid, containerName, _ := dockertools.ParseDockerName(dockerContainers[ix].Names[0])
-		if _, found := desiredPods[uid]; found {
-			// syncPod() will handle this one.
-			continue
-		}
-		_, _, podAnnotations := ParsePodFullName(podFullName)
-		if source := podAnnotations[ConfigSourceAnnotationKey]; !kl.sourceReady(source) {
-			// If the source for this container is not ready, skip deletion, so that we don't accidentally
-			// delete containers for sources that haven't reported yet.
-			glog.V(4).Infof("Skipping delete of container (%q), source (%s) aren't ready yet.", podFullName, source)
-			continue
-		}
-		pc := podContainer{podFullName, uid, containerName}
-		if _, ok := desiredContainers[pc]; !ok {
-			glog.V(1).Infof("Killing unwanted container %+v", pc)
-			err = kl.killContainer(dockerContainers[ix])
-			if err != nil {
-				glog.Errorf("Error killing container %+v: %v", pc, err)
-			} else {
-				killed = append(killed, dockerContainers[ix].ID)
-			}
-		}
-	}
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	running, err := dockertools.GetRunningContainers(kl.dockerClient, killed)
 	if err != nil {

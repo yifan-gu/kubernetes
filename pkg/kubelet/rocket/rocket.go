@@ -67,25 +67,25 @@ func (r *RocketRuntime) constructRunCmd(uuid string) string {
 	return fmt.Sprintf("%s %s %s", r.endpoint, "run-prepared", uuid)
 }
 
-func (r *RocketRuntime) podToUnits(pod api.BoundPod) ([]*unit.UnitOption, error) {
+func (r *RocketRuntime) podToUnits(pod *api.BoundPod) ([]*unit.UnitOption, error) {
 	b, err := json.Marshal(pod)
 	if err != nil {
 		return nil, err
 	}
 
 	units := []*unit.UnitOption{
-		&unit.UnitOption{
+		{
 			Section: "Unit",
 			Name:    "Description",
 			Value:   "k8s_rocket_pod",
 		},
 
-		&unit.UnitOption{
+		{
 			Section: "Install",
 			Name:    "WantedBy",
 			Value:   "multi-user.target", // TODO(yifan): Hardcode.
 		},
-		&unit.UnitOption{
+		{
 			Section: "X-K8S",
 			Name:    "POD",
 			Value:   string(b),
@@ -185,7 +185,7 @@ func (r *RocketRuntime) unitFileToPod(fname string) (*api.Pod, error) {
 	return &pod, nil
 }
 
-func (r *RocketRuntime) preparePod(pod api.BoundPod) (string, error) {
+func (r *RocketRuntime) preparePod(pod *api.BoundPod) (string, error) {
 	units, err := r.podToUnits(pod)
 	if err != nil {
 		return "", err
@@ -196,25 +196,26 @@ func (r *RocketRuntime) preparePod(pod api.BoundPod) (string, error) {
 	for _, c := range pod.Spec.Containers {
 		images = append(images, c.Image)
 	}
-	uuid, err := r.runCommand(true, "prepare", images...)
+	output, err := r.runCommand(true, "prepare", images...)
 	if err != nil {
 		return "", err
 	}
-	if len(uuid) == 0 {
+	uuid := strings.TrimSpace(string(output))
+	if uuid == "" {
 		panic("expect uuid returned, but get nothing")
 	}
-	fmt.Println("Prepare uuid:", string(uuid))
+	fmt.Println("Prepare uuid:", uuid)
 
 	units = append(units,
 		&unit.UnitOption{
 			Section: "X-K8S",
 			Name:    "RocketID",
-			Value:   string(uuid),
+			Value:   uuid,
 		},
 		&unit.UnitOption{
 			Section: "Service",
 			Name:    "ExecStart",
-			Value:   r.constructRunCmd(string(uuid)),
+			Value:   r.constructRunCmd(uuid),
 		},
 	)
 
@@ -239,7 +240,7 @@ func (r *RocketRuntime) preparePod(pod api.BoundPod) (string, error) {
 	return name, err
 }
 
-func (r *RocketRuntime) RunningPods() ([]*api.Pod, error) {
+func (r *RocketRuntime) ListPods() ([]*api.Pod, error) {
 	var pods []*api.Pod
 
 	units, err := r.systemd.ListUnits()
@@ -260,7 +261,7 @@ func (r *RocketRuntime) RunningPods() ([]*api.Pod, error) {
 	return pods, nil
 }
 
-func (r *RocketRuntime) RunPod(pod api.BoundPod) error {
+func (r *RocketRuntime) RunPod(pod *api.BoundPod) error {
 	name, err := r.preparePod(pod)
 	if err != nil {
 		return err
@@ -282,17 +283,12 @@ func (r *RocketRuntime) RunPod(pod api.BoundPod) error {
 func (r *RocketRuntime) KillPod(pod *api.Pod) error {
 	name := fmt.Sprintf("K8S_%s_%s.service", pod.Name, pod.Namespace)
 
-	ch := make(chan string)
-	_, err := r.systemd.StopUnit(name, "replace", ch)
+	_, err := r.systemd.DisableUnitFiles([]string{path.Join(tmpDirPath, name)}, true)
 	if err != nil {
 		return err
 	}
-	if status := <-ch; status != "done" {
-		return fmt.Errorf("unexpected return status %s", status)
-	}
-
-	_, err = r.systemd.DisableUnitFiles([]string{path.Join(tmpDirPath, name)}, true)
-	if err != nil {
+	r.systemd.KillUnit(name, 9)
+	if err = r.systemd.ResetFailedUnit(name); err != nil {
 		return err
 	}
 	return nil

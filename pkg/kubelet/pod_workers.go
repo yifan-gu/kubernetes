@@ -59,12 +59,15 @@ func (p *podWorkers) managePodLoop(podUpdates <-chan api.BoundPod) {
 		// performance overhead on Docker. Moreover, as long as we run syncPod
 		// no matter if it changes anything, having an old version of "containers"
 		// can cause starting eunended containers.
-		containers, err := p.dockerCache.RunningContainers()
+
+		// TODO: cache
+		runningPods, err := ListPods()
 		if err != nil {
-			glog.Errorf("Error listing containers while syncing pod: %v", err)
+			glog.Errorf("Error listing pods while syncing pod: %v", err)
 			continue
 		}
-		err = p.syncPodFun(&newPod, containers)
+		pod := findPod(newPod.UID, runningPods)
+		err = p.syncPodFun(&newPod, pod)
 		if err != nil {
 			glog.Errorf("Error syncing pod %s, skipping: %v", newPod.UID, err)
 			record.Eventf(&newPod, "failedSync", "Error syncing pod, skipping: %v", err)
@@ -73,7 +76,7 @@ func (p *podWorkers) managePodLoop(podUpdates <-chan api.BoundPod) {
 	}
 }
 
-func (p *podWorkers) UpdatePod(pod api.BoundPod) {
+func (p *podWorkers) UpdatePod(pod api.BoundPod, runningPod api.BoundPod) {
 	uid := pod.UID
 	var podUpdates chan api.BoundPod
 	var exists bool
