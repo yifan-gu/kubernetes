@@ -111,6 +111,9 @@ func (r *RocketRuntime) getPodsStatus() (map[string]*PodStatus, error) {
 	}
 	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
 		tuples := strings.Split(strings.TrimSpace(line), "\t")
+		if len(tuples) != 3 { // HARDCODE, non state line.
+			continue
+		}
 		status[tuples[0]] = &PodStatus{
 			State: tuples[2],
 		}
