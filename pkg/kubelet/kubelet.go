@@ -1043,8 +1043,8 @@ func (kl *Kubelet) syncPod(pod *api.BoundPod, runningPod *api.Pod) error {
 		return RunPod(pod)
 	}
 
-	// for each container in pod,
-	// 1. test if spec changed, if so, restart the container(restart policy). For now, restart whole container.
+	// For each container in pod,
+	// 1. Test if spec changed, if so, restart the container(restart policy). For now, restart whole container.
 	//    if not changed, probe the container, if unhealthy, restart the container(restart policy), For now, restart whole container.
 	// 2. Kill all containers in the pod, not identified. readiness.
 
@@ -1132,24 +1132,11 @@ func (kl *Kubelet) cleanupOrphanedPods(pods []api.BoundPod) error {
 
 // Compares the map of current volumes to the map of desired volumes.
 // If an active volume does not have a respective desired volume, clean it up.
-func (kl *Kubelet) cleanupOrphanedVolumes(pods []api.BoundPod, running []*docker.Container) error {
+func (kl *Kubelet) cleanupOrphanedVolumes(pods []api.BoundPod) error {
 	desiredVolumes := getDesiredVolumes(pods)
 	currentVolumes := kl.getPodVolumesFromDisk()
-	runningSet := util.StringSet{}
-	for ix := range running {
-		if len(running[ix].Name) == 0 {
-			glog.V(2).Infof("Found running container ix=%d with info: %+v", ix, running[ix])
-		}
-		_, uid, _, _ := dockertools.ParseDockerName(running[ix].Name)
-		runningSet.Insert(string(uid))
-	}
 	for name, vol := range currentVolumes {
 		if _, ok := desiredVolumes[name]; !ok {
-			parts := strings.Split(name, "/")
-			if runningSet.Has(parts[0]) {
-				glog.Infof("volume %s, still has a container running %s, skipping teardown", name, parts[0])
-				continue
-			}
 			//TODO (jonesdl) We should somehow differentiate between volumes that are supposed
 			//to be deleted and volumes that are leftover after a crash.
 			glog.Warningf("Orphaned volume %q found, tearing down volume", name)
@@ -1218,23 +1205,17 @@ func (kl *Kubelet) SyncPods(pods []api.BoundPod) error {
 		}
 	}
 
-	//running, err := dockertools.GetRunningContainers(kl.dockerClient, killed)
-	//if err != nil {
-	//	glog.Errorf("Failed to poll container state: %v", err)
-	//	return err
-	//}
-	//
-	//// Remove any orphaned volumes.
-	//err = kl.cleanupOrphanedVolumes(pods, running)
-	//if err != nil {
-	//	return err
-	//}
-	//
-	//// Remove any orphaned pods.
-	//err = kl.cleanupOrphanedPods(pods)
-	//if err != nil {
-	//	return err
-	//}
+	// Remove any orphaned volumes.
+	err = kl.cleanupOrphanedVolumes(pods)
+	if err != nil {
+		return err
+	}
+
+	// Remove any orphaned pods.
+	err = kl.cleanupOrphanedPods(pods)
+	if err != nil {
+		return err
+	}
 
 	return err
 }

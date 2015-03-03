@@ -31,8 +31,6 @@ import (
 	"github.com/golang/glog"
 )
 
-const ConfigSourceAnnotationKey = "kubernetes.io/config.source"
-
 var (
 	tmpDirPath = "/tmp"
 )
