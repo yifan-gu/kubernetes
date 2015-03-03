@@ -23,9 +23,20 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/rocket"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/types"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
+	"github.com/golang/glog"
 )
 
 const defaultEndpoint = "/home/yifan/gopher/src/github.com/coreos/rocket/bin/rkt"
+
+var rkt *rocket.RocketRuntime
+
+func init() {
+	var err error
+	rkt, err = rocket.NewRocketRuntime(defaultEndpoint)
+	if err != nil {
+		panic(err)
+	}
+}
 
 // FindContainerInPod finds the container in the pod.
 func FindContainerInPod(container *api.Container, pod *api.Pod) (*api.Container, bool) {
@@ -39,8 +50,6 @@ func FindContainerInPod(container *api.Container, pod *api.Pod) (*api.Container,
 
 // RunContainerInPod starts a container in the given pod.
 func RunContainerInPod(container *api.Container, pod *api.Pod) error {
-	rkt, _ := rocket.NewRocketRuntime(defaultEndpoint)
-
 	// Kill the pod and restart.
 	if err := rkt.KillPod(pod); err != nil {
 		return err
@@ -76,24 +85,27 @@ func HashContainer(container *api.Container) uint64 {
 
 // ProbeContainer probes the container. The boolean it returns
 // indicates whether the container is healthy.
+// TODO(yifan):This is runtime unrelated, should be taken out.
 func ProbeContainer(container *api.Container) (bool, error) {
 	return true, nil
 }
 
 // RestartContainer restarts the container in the pod.
 func RestartContainer(container *api.Container, pod *api.Pod) error {
-	rkt, _ := rocket.NewRocketRuntime(defaultEndpoint)
-
 	if err := rkt.KillPod(pod); err != nil {
 		return err
 	}
 
+	glog.V(4).Infof("container: %#v", container)
+
 	// Update the pod and start it.
 	for i, c := range pod.Spec.Containers {
+		glog.V(4).Infof("found the cotnainer: %#v", c)
 		if c.Name == container.Name {
 			pod.Spec.Containers[i] = *container
 		}
 	}
+	glog.V(4).Infof("pod containers: %#v", pod.Spec.Containers)
 	boundPod := &api.BoundPod{pod.TypeMeta, pod.ObjectMeta, pod.Spec}
 	if err := rkt.RunPod(boundPod); err != nil {
 		return err
@@ -103,8 +115,6 @@ func RestartContainer(container *api.Container, pod *api.Pod) error {
 
 // KillContainer kills the container in the pod.
 func KillContainer(container *api.Container, pod *api.Pod) error {
-	rkt, _ := rocket.NewRocketRuntime(defaultEndpoint)
-
 	if err := rkt.KillPod(pod); err != nil {
 		return err
 	}
@@ -124,15 +134,13 @@ func KillContainer(container *api.Container, pod *api.Pod) error {
 	return nil
 }
 
+// KillPod kills a pod.
 func KillPod(pod *api.Pod) error {
-	rkt, _ := rocket.NewRocketRuntime(defaultEndpoint)
 	return rkt.KillPod(pod)
 }
 
 // ListPods lists all the currently running pods.
 func ListPods() ([]*api.Pod, error) {
-	rkt, _ := rocket.NewRocketRuntime(defaultEndpoint)
-
 	return rkt.ListPods()
 }
 
@@ -144,4 +152,9 @@ func findPod(uid types.UID, pods []*api.Pod) *api.Pod {
 		}
 	}
 	return nil
+}
+
+// RunPod runs a pod.
+func RunPod(pod *api.BoundPod) error {
+	return rkt.RunPod(pod)
 }

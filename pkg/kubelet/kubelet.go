@@ -1038,6 +1038,11 @@ func (kl *Kubelet) syncPod(pod *api.BoundPod, runningPod *api.Pod) error {
 	}
 	_ = podVolumes
 
+	if runningPod == nil {
+		glog.V(4).Infof("Pod is not running, let's start the pod")
+		return RunPod(pod)
+	}
+
 	// for each container in pod,
 	// 1. test if spec changed, if so, restart the container(restart policy). For now, restart whole container.
 	//    if not changed, probe the container, if unhealthy, restart the container(restart policy), For now, restart whole container.
@@ -1055,18 +1060,17 @@ func (kl *Kubelet) syncPod(pod *api.BoundPod, runningPod *api.Pod) error {
 			continue
 		}
 
-		// Container is found, remove the container from the running list
-		// so we can avoid killing it later.
-		removeContainer(runningPod, container)
-
 		expectedHash := HashContainer(&container)
 		hash := HashContainer(runningContainer)
-		containerChanged := expectedHash == hash
+		containerChanged := expectedHash != hash
 		containerHealthy, err := ProbeContainer(runningContainer)
 		if err != nil {
 			glog.V(1).Infof("liveness/readiness probe errored: %v", err)
+			removeContainer(runningPod, container)
 			continue
 		}
+
+		glog.V(4).Infof("containerChanged: %v, containerHealthy: %v", containerChanged, containerHealthy)
 
 		// TODO(yifan): should find a way to know whether it exits normally.
 		if containerChanged || !containerHealthy {
@@ -1074,6 +1078,8 @@ func (kl *Kubelet) syncPod(pod *api.BoundPod, runningPod *api.Pod) error {
 				glog.V(1).Infof("Failed to restart container %q: %v", runningContainer.Name, err)
 			}
 		}
+		// This actually marks the container as necessary container.
+		removeContainer(runningPod, container)
 	}
 	// Kill all unidentified containers.
 	for _, container := range runningPod.Spec.Containers {
@@ -1169,6 +1175,7 @@ func (kl *Kubelet) SyncPods(pods []api.BoundPod) error {
 		glog.Errorf("Error listing running pods: %v", err)
 		return err
 	}
+	glog.V(4).Infof("Running Pods %#v", runningPods)
 
 	// Check for any containers that need starting.
 	for _, pod := range pods {

@@ -28,6 +28,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
 	"github.com/coreos/go-systemd/dbus"
 	"github.com/coreos/go-systemd/unit"
+	"github.com/golang/glog"
 )
 
 const ConfigSourceAnnotationKey = "kubernetes.io/config.source"
@@ -53,6 +54,7 @@ func NewRocketRuntime(endpoint string) (*RocketRuntime, error) {
 }
 
 func (r *RocketRuntime) runCommand(stdout bool, subCommand string, args ...string) ([]byte, error) {
+	glog.V(4).Info("run command:", subCommand, args)
 	var allArgs []string
 	allArgs = append(allArgs, subCommand)
 	allArgs = append(allArgs, args...)
@@ -101,10 +103,14 @@ type PodStatus struct {
 func (r *RocketRuntime) getPodsStatus() (map[string]*PodStatus, error) {
 	status := make(map[string]*PodStatus)
 	output, err := r.runCommand(true, "list", "--no-legend")
+	glog.V(4).Infof("list output: %s", string(output))
 	if err != nil {
 		return nil, err
 	}
 
+	if len(output) == 0 { // No containers running.
+		return nil, nil
+	}
 	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
 		tuples := strings.Split(strings.TrimSpace(line), "\t")
 		status[tuples[0]] = &PodStatus{
@@ -241,6 +247,7 @@ func (r *RocketRuntime) preparePod(pod *api.BoundPod) (string, error) {
 }
 
 func (r *RocketRuntime) ListPods() ([]*api.Pod, error) {
+	glog.V(4).Infof("Listing pod")
 	var pods []*api.Pod
 
 	units, err := r.systemd.ListUnits()
@@ -264,14 +271,16 @@ func (r *RocketRuntime) ListPods() ([]*api.Pod, error) {
 func (r *RocketRuntime) RunPod(pod *api.BoundPod) error {
 	name, err := r.preparePod(pod)
 	if err != nil {
+		glog.Errorf("Error preparePod: %v", err)
 		return err
 	}
 
 	ch := make(chan string)
-	fmt.Println("Starting Unit:", name)
+	glog.V(4).Infof("Starting Unit: %s", name)
 
 	_, err = r.systemd.StartUnit(name, "replace", ch)
 	if err != nil {
+		glog.Error("Error StartUnit: %v", err)
 		return err
 	}
 	if status := <-ch; status != "done" {
@@ -281,6 +290,7 @@ func (r *RocketRuntime) RunPod(pod *api.BoundPod) error {
 }
 
 func (r *RocketRuntime) KillPod(pod *api.Pod) error {
+	glog.V(4).Infof("Killing pod: name %s", pod.Name)
 	name := fmt.Sprintf("K8S_%s_%s.service", pod.Name, pod.Namespace)
 
 	_, err := r.systemd.DisableUnitFiles([]string{path.Join(tmpDirPath, name)}, true)
