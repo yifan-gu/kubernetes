@@ -82,9 +82,9 @@ func NewRocketRuntime() (*RocketRuntime, error) {
 		return nil, err
 	}
 	if _, found := result[rocketBinName]; !found {
-		return nil, fmt.Errorf("Cannot get the version of rocket")
+		return nil, fmt.Errorf("rocket: cannot get the version of rocket")
 	}
-	glog.V(4).Infof("rocket version: %v", result)
+	glog.V(4).Infof("Rocket version: %v.", result)
 	return rkt, nil
 }
 
@@ -109,7 +109,7 @@ func (r *RocketRuntime) Version() (map[string]string, error) {
 	for _, line := range output {
 		tuples := strings.Split(strings.TrimSpace(line), " ")
 		if len(tuples) != 3 {
-			glog.Warningf("Cannot parse the output: %q", line)
+			glog.Warningf("Cannot parse the output: %q.", line)
 			continue
 		}
 		result[tuples[0]] = tuples[2]
@@ -120,7 +120,7 @@ func (r *RocketRuntime) Version() (map[string]string, error) {
 // ListPods runs 'systemctl list-unit' and 'rkt list' to get the list of all the appcs.
 // Then it will use the result to contruct list of pods.
 func (r *RocketRuntime) ListPods() ([]*api.Pod, error) {
-	glog.V(4).Infof("rocket is listing pods")
+	glog.V(4).Infof("Rocket is listing pods.")
 
 	units, err := r.systemd.ListUnits()
 	if err != nil {
@@ -144,7 +144,7 @@ func (r *RocketRuntime) ListPods() ([]*api.Pod, error) {
 // RunPod first creates the unit file for a pod, and then invokes
 // 'systemctl start' to run that unit file.
 func (r *RocketRuntime) RunPod(pod *api.BoundPod) error {
-	glog.V(4).Infof("rocket is running pod: name %q", pod.Name)
+	glog.V(4).Infof("Rocket starts to run pod: name %q.", pod.Name)
 
 	name, err := r.preparePod(pod)
 	if err != nil {
@@ -157,14 +157,14 @@ func (r *RocketRuntime) RunPod(pod *api.BoundPod) error {
 		return err
 	}
 	if status := <-ch; status != "done" {
-		return fmt.Errorf("Unexpected return status %q", status)
+		return fmt.Errorf("rocket: unexpected return status %q", status)
 	}
 	return nil
 }
 
 // KillPod invokes 'systemctl kill' to kill the unit that runs the pod.
 func (r *RocketRuntime) KillPod(pod *api.Pod) error {
-	glog.V(4).Infof("rocket is killing pod: name %q", pod.Name)
+	glog.V(4).Infof("Rocket is killing pod: name %q", pod.Name)
 
 	serviceName := makePodServiceFileName(pod.Name, pod.Namespace)
 
@@ -202,14 +202,14 @@ func (r *RocketRuntime) RestartContainerInPod(container *api.Container, pod *api
 
 	// Update the pod and start it.
 	for i, c := range pod.Spec.Containers {
-		glog.V(4).Infof("found the cotnainer: %#v", c)
+		glog.V(4).Infof("Found the cotnainer: %#v.", c)
 		if c.Name == container.Name {
 			pod.Spec.Containers[i] = *container
 			boundPod := &api.BoundPod{pod.TypeMeta, pod.ObjectMeta, pod.Spec}
 			return r.RunPod(boundPod)
 		}
 	}
-	return fmt.Errorf("Cannot find the container: %q, in the pod: %q", container.Name, pod.Name)
+	return fmt.Errorf("rocket: cannot find the container: %q, in the pod: %q", container.Name, pod.Name)
 }
 
 // KillContainer kills the container in the given pod.
@@ -235,7 +235,7 @@ func (r *RocketRuntime) KillContainerInPod(container *api.Container, pod *api.Po
 // runCommand invokes 'rkt [subCommand] [args]' and returns the result from stdout
 // in a list of strings.
 func runCommand(subCommand string, args ...string) ([]string, error) {
-	glog.V(4).Info("run rkt command:", subCommand, args)
+	glog.V(4).Infof("Run rkt command: %v %v.", subCommand, args)
 	var allArgs []string
 	allArgs = append(allArgs, subCommand)
 	allArgs = append(allArgs, args...)
@@ -289,12 +289,12 @@ func getPodStatus(pod *api.Pod) error {
 	rktID, found := pod.Annotations[rocketIDKey]
 	if !found {
 		// TODO(yifan): Maybe we should panic here...
-		return fmt.Errorf("Impossible: Cannot find rocket pod: %v", pod)
+		return fmt.Errorf("rocket: cannot find rocket pod: %v, this is impossible", pod)
 	}
 
 	state, found := podStates[rktID]
 	if !found {
-		return fmt.Errorf("Cannot find the state for pod: %q, rocket ID: %q", pod.Name, rktID)
+		return fmt.Errorf("rocket: cannot find the state for pod: %q, rocket ID: %q", pod.Name, rktID)
 	}
 
 	// For now just make every container's state as same as the pod.
@@ -321,7 +321,7 @@ func getPodStatus(pod *api.Pod) error {
 				},
 			}
 		default:
-			return fmt.Errorf("Unexpected state: %q", state)
+			return fmt.Errorf("rocket: unexpected state: %q", state)
 		}
 	}
 	return nil
@@ -382,7 +382,7 @@ func (r *RocketRuntime) preparePod(pod *api.BoundPod) (string, error) {
 		return "", err
 	}
 	if len(output) != 1 {
-		return "", fmt.Errorf("Cannot get uuid from 'rkt prepare'")
+		return "", fmt.Errorf("rocket: cannot get uuid from 'rkt prepare'")
 	}
 
 	uuid := output[0]
