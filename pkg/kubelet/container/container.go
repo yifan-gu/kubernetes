@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package kubelet
+package container
 
 import "github.com/GoogleCloudPlatform/kubernetes/pkg/api"
 
@@ -26,6 +26,5 @@ type ContainerRuntime interface {
 	RunPod(*api.BoundPod) error
 	KillPod(*api.Pod) error
 	RunContainerInPod(*api.Container, *api.Pod) error
-	RestartContainerInPod(*api.Container, *api.Pod) error
 	KillContainerInPod(*api.Container, *api.Pod) error
 }
