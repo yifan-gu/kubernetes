@@ -53,15 +53,16 @@ const (
 	podStateGone      = "gone"
 )
 
-// RocketRuntime implements the ContainerRuntimeInterface for rocket container runtime.
-type RocketRuntime struct {
+// Runtime implements the ContainerRuntime for rocket.
+type Runtime struct {
 	systemd *dbus.Conn
 	absPath string
 }
 
-// NewRocketRuntime creates the rocket container runtime with the given
-// path to the rkt binary.
-func NewRocketRuntime() (*RocketRuntime, error) {
+// New creats the rocket container runtime which implements the container runtime interface.
+// It will test if the 'rkt' binary is in the $PATH, and whether we can get the
+// version of it. If so, creates the rocket container runtime, other returns an error.
+func New() (*RocketRuntime, error) {
 	systemd, err := dbus.New()
 	if err != nil {
 		return nil, err
@@ -132,7 +133,7 @@ func (r *RocketRuntime) ListPods() ([]*api.Pod, error) {
 		if strings.HasPrefix(u.Name, kubernetesUnitPrefix) {
 			pod, err := makePod(u.Name)
 			if err != nil {
-				glog.Warningf("Cannot construct pod from unit file: %v", err)
+				glog.Warningf("Cannot construct pod from unit file: %v.", err)
 				continue
 			}
 			pods = append(pods, pod)
@@ -164,7 +165,7 @@ func (r *RocketRuntime) RunPod(pod *api.BoundPod) error {
 
 // KillPod invokes 'systemctl kill' to kill the unit that runs the pod.
 func (r *RocketRuntime) KillPod(pod *api.Pod) error {
-	glog.V(4).Infof("Rocket is killing pod: name %q", pod.Name)
+	glog.V(4).Infof("Rocket is killing pod: name %q.", pod.Name)
 
 	serviceName := makePodServiceFileName(pod.Name, pod.Namespace)
 
@@ -357,7 +358,7 @@ func makePod(unitName string) (*api.Pod, error) {
 	}
 
 	if err = getPodStatus(&pod); err != nil {
-		glog.Errorf("Error getting pod status of pod %q", pod.Name)
+		glog.Errorf("Error getting pod status of pod %q.", pod.Name)
 		return nil, err
 	}
 	return &pod, nil
@@ -386,7 +387,7 @@ func (r *RocketRuntime) preparePod(pod *api.BoundPod) (string, error) {
 	}
 
 	uuid := output[0]
-	glog.V(4).Infof("rkt prepare returns %q", uuid)
+	glog.V(4).Infof("'rkt prepare' returns %q.", uuid)
 
 	// Save the rocket uuid in pod annotations.
 	pod.Annotations[rocketIDKey] = uuid

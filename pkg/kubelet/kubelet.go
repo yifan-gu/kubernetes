@@ -129,7 +129,7 @@ func NewMainKubelet(
 		streamingConnectionIdleTimeout: streamingConnectionIdleTimeout,
 	}
 
-	containerRuntime, err := rocket.NewRocketRuntime()
+	containerRuntime, err := rocket.New()
 	if err != nil {
 		return nil, err
 	}
