@@ -16,7 +16,11 @@ limitations under the License.
 
 package container
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
+)
 
 type FakeRuntime struct {
 	sync.Mutex
@@ -69,17 +73,16 @@ func (f *FakeRuntime) RunContainerInPod(container *api.Container, pod *api.Pod) 
 	defer f.Unlock()
 
 	f.CalledFunctions = append(f.CalledFunctions, "RunContainerInPod")
+	f.StartedContainers = append(f.StartedContainers, container)
 
 	pod.Spec.Containers = append(pod.Spec.Containers, *container)
-	f.StartedContainers = append(f.StartedContainers, container)
-	for _, p := range f.StartedPods {
-		if p.UID == pod.UID {
-			return f.Err
+	for _, c := range pod.Spec.Containers {
+		if c.Name == container.Name {
+			continue
 		}
+		containers = append(containers, c)
 	}
-	f.StartedPods = append(f.StartedPods, pod.UID)
 	return f.Err
-
 }
 
 func (f *FakeRuntime) KillContainerInPod(container *api.Container, pod *api.Pod) error {
@@ -87,6 +90,8 @@ func (f *FakeRuntime) KillContainerInPod(container *api.Container, pod *api.Pod)
 	defer f.Unlock()
 
 	f.CalledFunctions = append(f.CalledFunctions, "KillContainerInPod")
+	f.KilledContainers = append(f.KilledContainers, container.Name)
+
 	var containers []api.Container
 	for _, c := range pod.Spec.Containers {
 		if c.Name == container.Name {
@@ -94,7 +99,5 @@ func (f *FakeRuntime) KillContainerInPod(container *api.Container, pod *api.Pod)
 		}
 		containers = append(containers, c)
 	}
-	/////////////////////////////////////////////////////////////
-	pod.Spec.Containers = append(pod.Spec.Containers, *container)
 	return f.Err
 }
