@@ -141,7 +141,7 @@ func NewMainKubelet(
 		return nil, err
 	}
 	klet.dockerCache = dockerCache
-	klet.podWorkers = newPodWorkers(dockerCache, klet.containerRuntime, klet.syncPod)
+	klet.podWorkers = newPodWorkers(klet.containerRuntime, klet.syncPod)
 
 	metrics.Register(dockerCache)
 
@@ -1031,12 +1031,6 @@ func (kl *Kubelet) syncPod(pod *api.BoundPod, runningPod *api.Pod) error {
 		return err
 	}
 
-	podStatus, err := kl.GetPodStatus(podFullName, uid)
-	if err != nil {
-		glog.Errorf("Unable to get pod with name %q and uid %q info with error(%v)", podFullName, uid, err)
-	}
-	_ = podStatus
-
 	podVolumes, err := kl.mountExternalVolumes(pod)
 	if err != nil {
 		if ref != nil {
@@ -1177,7 +1171,6 @@ func (kl *Kubelet) cleanupOrphanedVolumes(pods []api.BoundPod) error {
 func (kl *Kubelet) SyncPods(pods []api.BoundPod) error {
 	glog.V(4).Infof("Desired: %#v", pods)
 	var err error
-	desiredContainers := make(map[podContainer]empty)
 	desiredPods := make(map[types.UID]empty)
 
 	runningPods, err := kl.containerRuntime.ListPods()
@@ -1189,14 +1182,7 @@ func (kl *Kubelet) SyncPods(pods []api.BoundPod) error {
 
 	// Check for any containers that need starting.
 	for _, pod := range pods {
-		podFullName := GetPodFullName(&pod)
 		desiredPods[pod.UID] = empty{}
-
-		// Add all containers to the map.
-		for _, cont := range pod.Spec.Containers {
-			desiredContainers[podContainer{podFullName, pod.UID, cont.Name}] = empty{}
-		}
-
 		// Run the sync in an async manifest worker.
 		kl.podWorkers.UpdatePod(pod)
 	}
