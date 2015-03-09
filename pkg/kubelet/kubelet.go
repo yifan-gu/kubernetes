@@ -136,12 +136,19 @@ func NewMainKubelet(
 	}
 	klet.containerRuntime = containerRuntime
 
+	containerRuntimeCache, err := container.NewRuntimeCache(containerRuntime)
+	if err != nil {
+		return nil, err
+	}
+	klet.containerRuntimeCache = containerRuntimeCache
+	klet.podWorkers = newPodWorkers(klet.containerRuntimeCache, klet.syncPod)
+
+	// Old Docker Cache.
 	dockerCache, err := dockertools.NewDockerCache(dockerClient)
 	if err != nil {
 		return nil, err
 	}
 	klet.dockerCache = dockerCache
-	klet.podWorkers = newPodWorkers(klet.containerRuntime, klet.syncPod)
 
 	metrics.Register(dockerCache)
 
@@ -167,6 +174,7 @@ type serviceLister interface {
 type Kubelet struct {
 	hostname               string
 	containerRuntime       container.Runtime
+	containerRuntimeCache  container.RuntimeCache
 	dockerClient           dockertools.DockerInterface
 	dockerCache            dockertools.DockerCache
 	kubeClient             *client.Client
@@ -1173,7 +1181,7 @@ func (kl *Kubelet) SyncPods(pods []api.BoundPod) error {
 	var err error
 	desiredPods := make(map[types.UID]empty)
 
-	runningPods, err := kl.containerRuntime.ListPods()
+	runningPods, err := kl.containerRuntimeCache.ListPods()
 	if err != nil {
 		glog.Errorf("Error listing running pods: %v", err)
 		return err

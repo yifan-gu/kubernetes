@@ -32,8 +32,8 @@ type podWorkers struct {
 
 	// Tracks all running per-pod goroutines - per-pod goroutine will be
 	// processing updates received through its corresponding channel.
-	podUpdates       map[types.UID]chan api.BoundPod
-	containerRuntime container.Runtime
+	podUpdates            map[types.UID]chan api.BoundPod
+	containerRuntimeCache container.RuntimeCache
 
 	// This function is run to sync the desired stated of pod.
 	// NOTE: This function has to be thread-safe - it can be called for
@@ -42,12 +42,12 @@ type podWorkers struct {
 }
 
 func newPodWorkers(
-	containerRuntime container.Runtime,
+	containerRuntimeCache container.RuntimeCache,
 	syncPodFun syncPodFunType) *podWorkers {
 	return &podWorkers{
-		podUpdates:       map[types.UID]chan api.BoundPod{},
-		containerRuntime: containerRuntime,
-		syncPodFun:       syncPodFun,
+		podUpdates:            map[types.UID]chan api.BoundPod{},
+		containerRuntimeCache: containerRuntimeCache,
+		syncPodFun:            syncPodFun,
 	}
 }
 
@@ -59,7 +59,7 @@ func (p *podWorkers) managePodLoop(podUpdates <-chan api.BoundPod) {
 		// can cause starting eunended containers.
 
 		// TODO: cache
-		runningPods, err := p.containerRuntime.ListPods()
+		runningPods, err := p.containerRuntimeCache.ListPods()
 		if err != nil {
 			glog.Errorf("Error listing pods while syncing pod: %v", err)
 			continue
