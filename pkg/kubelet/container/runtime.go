@@ -18,13 +18,14 @@ package container
 
 import "github.com/GoogleCloudPlatform/kubernetes/pkg/api"
 
-// ContainerRuntime interface defines the interfaces that should be implemented
+// Runtime interface defines the interfaces that should be implemented
 // by a container runtime.
-type ContainerRuntime interface {
+type Runtime interface {
 	Version() (map[string]string, error)
 	ListPods() ([]*api.Pod, error)
 	RunPod(*api.BoundPod) error
 	KillPod(*api.Pod) error
-	RunContainerInPod(*api.Container, *api.Pod) error
-	KillContainerInPod(*api.Container, *api.Pod) error
+	RunContainerInPod(api.Container, *api.Pod) error
+	KillContainerInPod(api.Container, *api.Pod) error
+	// TODO(yifan): Pull/Remove images
 }

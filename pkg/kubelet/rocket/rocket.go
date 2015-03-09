@@ -27,6 +27,7 @@ import (
 	"syscall"
 
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/container"
 	"github.com/coreos/go-systemd/dbus"
 	"github.com/coreos/go-systemd/unit"
 	"github.com/golang/glog"
@@ -62,7 +63,7 @@ type Runtime struct {
 // New creats the rocket container runtime which implements the container runtime interface.
 // It will test if the 'rkt' binary is in the $PATH, and whether we can get the
 // version of it. If so, creates the rocket container runtime, other returns an error.
-func New() (*RocketRuntime, error) {
+func New() (container.Runtime, error) {
 	systemd, err := dbus.New()
 	if err != nil {
 		return nil, err
@@ -72,7 +73,7 @@ func New() (*RocketRuntime, error) {
 	if err != nil {
 		return nil, err
 	}
-	rkt := &RocketRuntime{
+	rkt := &Runtime{
 		systemd: systemd,
 		absPath: absPath,
 	}
@@ -97,7 +98,7 @@ func New() (*RocketRuntime, error) {
 // rkt:0.3.2+git
 // appc:0.3.0+git
 //
-func (r *RocketRuntime) Version() (map[string]string, error) {
+func (r *Runtime) Version() (map[string]string, error) {
 	output, err := runCommand("version")
 	if err != nil {
 		return nil, err
@@ -120,7 +121,7 @@ func (r *RocketRuntime) Version() (map[string]string, error) {
 
 // ListPods runs 'systemctl list-unit' and 'rkt list' to get the list of all the appcs.
 // Then it will use the result to contruct list of pods.
-func (r *RocketRuntime) ListPods() ([]*api.Pod, error) {
+func (r *Runtime) ListPods() ([]*api.Pod, error) {
 	glog.V(4).Infof("Rocket is listing pods.")
 
 	units, err := r.systemd.ListUnits()
@@ -144,7 +145,7 @@ func (r *RocketRuntime) ListPods() ([]*api.Pod, error) {
 
 // RunPod first creates the unit file for a pod, and then invokes
 // 'systemctl start' to run that unit file.
-func (r *RocketRuntime) RunPod(pod *api.BoundPod) error {
+func (r *Runtime) RunPod(pod *api.BoundPod) error {
 	glog.V(4).Infof("Rocket starts to run pod: name %q.", pod.Name)
 
 	name, err := r.preparePod(pod)
@@ -164,7 +165,7 @@ func (r *RocketRuntime) RunPod(pod *api.BoundPod) error {
 }
 
 // KillPod invokes 'systemctl kill' to kill the unit that runs the pod.
-func (r *RocketRuntime) KillPod(pod *api.Pod) error {
+func (r *Runtime) KillPod(pod *api.Pod) error {
 	glog.V(4).Infof("Rocket is killing pod: name %q.", pod.Name)
 
 	serviceName := makePodServiceFileName(pod.Name, pod.Namespace)
@@ -180,13 +181,13 @@ func (r *RocketRuntime) KillPod(pod *api.Pod) error {
 // RunContainerInPod launches a container in the given pod.
 // For now, we need to kill and restart the whole pod. Hopefully we will be
 // launching this single container without touching its sliblings in the near future.
-func (r *RocketRuntime) RunContainerInPod(container *api.Container, pod *api.Pod) error {
+func (r *Runtime) RunContainerInPod(container api.Container, pod *api.Pod) error {
 	if err := r.KillPod(pod); err != nil {
 		return err
 	}
 
 	// Update the pod and start it.
-	pod.Spec.Containers = append(pod.Spec.Containers, *container)
+	pod.Spec.Containers = append(pod.Spec.Containers, container)
 	boundPod := &api.BoundPod{pod.TypeMeta, pod.ObjectMeta, pod.Spec}
 	if err := r.RunPod(boundPod); err != nil {
 		return err
@@ -194,29 +195,10 @@ func (r *RocketRuntime) RunContainerInPod(container *api.Container, pod *api.Pod
 	return nil
 }
 
-// RestartContainerInPod restarts a container in the given pod.
-// Like RunContainerInPod, we need to kill and restart the whole pod for now.
-func (r *RocketRuntime) RestartContainerInPod(container *api.Container, pod *api.Pod) error {
-	if err := r.KillPod(pod); err != nil {
-		return err
-	}
-
-	// Update the pod and start it.
-	for i, c := range pod.Spec.Containers {
-		glog.V(4).Infof("Found the cotnainer: %#v.", c)
-		if c.Name == container.Name {
-			pod.Spec.Containers[i] = *container
-			boundPod := &api.BoundPod{pod.TypeMeta, pod.ObjectMeta, pod.Spec}
-			return r.RunPod(boundPod)
-		}
-	}
-	return fmt.Errorf("rocket: cannot find the container: %q, in the pod: %q", container.Name, pod.Name)
-}
-
 // KillContainer kills the container in the given pod.
 // Like RunContainerInPod, we will have to tear down the whole pod first to kill this
 // single container.
-func (r *RocketRuntime) KillContainerInPod(container *api.Container, pod *api.Pod) error {
+func (r *Runtime) KillContainerInPod(container api.Container, pod *api.Pod) error {
 	if err := r.KillPod(pod); err != nil {
 		return err
 	}
@@ -372,7 +354,7 @@ func makePodServiceFileName(podName, podNamespace string) string {
 }
 
 // preparePod creates the unit file and save it under systemdUnitDir.
-func (r *RocketRuntime) preparePod(pod *api.BoundPod) (string, error) {
+func (r *Runtime) preparePod(pod *api.BoundPod) (string, error) {
 	// Get the pod's uuid.
 	var images []string
 	for _, c := range pod.Spec.Containers {

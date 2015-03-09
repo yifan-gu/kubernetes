@@ -37,6 +37,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client/cache"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client/record"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/container"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/dockertools"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/envvars"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/metrics"
@@ -165,7 +166,7 @@ type serviceLister interface {
 // Kubelet is the main kubelet implementation.
 type Kubelet struct {
 	hostname               string
-	containerRuntime       ContainerRuntime
+	containerRuntime       container.Runtime
 	dockerClient           dockertools.DockerInterface
 	dockerCache            dockertools.DockerCache
 	kubeClient             *client.Client
@@ -1057,25 +1058,25 @@ func (kl *Kubelet) syncPod(pod *api.BoundPod, runningPod *api.Pod) error {
 	//    if not changed, probe the container, if unhealthy, restart the container(restart policy), For now, restart whole container.
 	// 2. Kill all containers in the pod, not identified. readiness.
 
-	for _, container := range pod.Spec.Containers {
-		runningContainer, found := findContainerInPodByName(container.Name, runningPod)
+	for _, ctnr := range pod.Spec.Containers {
+		runningContainer, found := findContainerInPodByName(ctnr.Name, runningPod)
 		containerHealthy := true
 
 		if !found {
-			glog.V(3).Infof("pod %q container %q does not exist, creating...", podFullName, container.Name)
-			if err := kl.containerRuntime.RunContainerInPod(&container, runningPod); err != nil {
-				glog.Errorf("Error running pod %q container %q: %v", podFullName, container.Name, err)
+			glog.V(3).Infof("pod %q container %q does not exist, creating...", podFullName, ctnr.Name)
+			if err := kl.containerRuntime.RunContainerInPod(ctnr, runningPod); err != nil {
+				glog.Errorf("Error running pod %q container %q: %v", podFullName, ctnr.Name, err)
 			}
 			continue
 		}
 
-		expectedHash := hashContainer(&container)
+		expectedHash := hashContainer(&ctnr)
 		hash := hashContainer(runningContainer)
 		containerChanged := expectedHash != hash
 		containerHealthy, err := probeContainer(runningContainer)
 		if err != nil {
 			glog.V(1).Infof("liveness/readiness probe errored: %v", err)
-			removeContainerInPodByName(container.Name, runningPod)
+			removeContainerInPodByName(ctnr.Name, runningPod)
 			continue
 		}
 
@@ -1083,18 +1084,31 @@ func (kl *Kubelet) syncPod(pod *api.BoundPod, runningPod *api.Pod) error {
 
 		// TODO(yifan): should find a way to know whether it exits normally.
 		if containerChanged || !containerHealthy {
-			if err = kl.containerRuntime.RestartContainerInPod(&container, runningPod); err != nil {
+			if err = kl.RestartContainerInPod(ctnr, runningPod); err != nil {
 				glog.V(1).Infof("Failed to restart container %q: %v", runningContainer.Name, err)
 			}
 		}
 		// This actually marks the container as necessary container.
-		removeContainerInPodByName(container.Name, runningPod)
+		removeContainerInPodByName(ctnr.Name, runningPod)
 	}
 	// Kill all unidentified containers.
-	for _, container := range runningPod.Spec.Containers {
-		if err = kl.containerRuntime.KillContainerInPod(&container, runningPod); err != nil {
-			glog.V(1).Infof("Failed to kill container %q: %v", container.Name, err)
+	for _, ctnr := range runningPod.Spec.Containers {
+		if err = kl.containerRuntime.KillContainerInPod(ctnr, runningPod); err != nil {
+			glog.V(1).Infof("Failed to kill container %q: %v", ctnr.Name, err)
 		}
+	}
+	return nil
+}
+
+// RestartContainersInPod invokes container.Runtime.KillContainerInPod and container.Runtime.RunContainerInPod
+// to restart the container.
+func (kl *Kubelet) RestartContainerInPod(container api.Container, pod *api.Pod) error {
+	if err := kl.containerRuntime.KillContainerInPod(container, pod); err != nil {
+		return err
+	}
+	// TODO(yifan): Check restart policy.
+	if err := kl.containerRuntime.RunContainerInPod(container, pod); err != nil {
+		return err
 	}
 	return nil
 }

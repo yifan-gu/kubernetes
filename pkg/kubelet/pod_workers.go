@@ -18,6 +18,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client/record"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/container"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/dockertools"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/types"
 	"github.com/golang/glog"
@@ -35,7 +36,7 @@ type podWorkers struct {
 	podUpdates map[types.UID]chan api.BoundPod
 	// DockerCache is used for listing running containers.
 	dockerCache      dockertools.DockerCache
-	containerRuntime ContainerRuntime
+	containerRuntime container.Runtime
 
 	// This function is run to sync the desired stated of pod.
 	// NOTE: This function has to be thread-safe - it can be called for
@@ -45,7 +46,7 @@ type podWorkers struct {
 
 func newPodWorkers(
 	dockerCache dockertools.DockerCache,
-	containerRuntime ContainerRuntime,
+	containerRuntime container.Runtime,
 	syncPodFun syncPodFunType) *podWorkers {
 	return &podWorkers{
 		podUpdates:       map[types.UID]chan api.BoundPod{},
