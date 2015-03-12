@@ -77,6 +77,7 @@ type KubeletServer struct {
 	ClusterDNS                     util.IP
 	ReallyCrashForTesting          bool
 	StreamingConnectionIdleTimeout time.Duration
+	ContainerRuntimeChoice         string
 }
 
 // NewKubeletServer will create a new KubeletServer with default values.
@@ -130,6 +131,7 @@ func (s *KubeletServer) AddFlags(fs *pflag.FlagSet) {
 	fs.Var(&s.ClusterDNS, "cluster_dns", "IP address for a cluster DNS server.  If set, kubelet will configure all containers to use this for DNS resolution in addition to the host's DNS servers")
 	fs.BoolVar(&s.ReallyCrashForTesting, "really_crash_for_testing", s.ReallyCrashForTesting, "If true, crash with panics more often.")
 	fs.DurationVar(&s.StreamingConnectionIdleTimeout, "streaming_connection_idle_timeout", 0, "Maximum time a streaming connection can be idle before the connection is automatically closed.  Example: '5m'")
+	fs.StringVar(&s.ContainerRuntimeChoice, "container_runtime_choice", "rocket", "The choice fo the container runtime. Example: 'docker', 'rocket'.")
 }
 
 // Run runs the specified KubeletServer.  This should never exit.
@@ -348,6 +350,7 @@ type KubeletConfig struct {
 	FileCheckFrequency             time.Duration
 	HTTPCheckFrequency             time.Duration
 	Hostname                       string
+	ContainerRuntimeChoice         string
 	PodInfraContainerImage         string
 	SyncFrequency                  time.Duration
 	RegistryPullQPS                float64
@@ -391,6 +394,7 @@ func createAndInitKubelet(kc *KubeletConfig, pc *config.PodConfig) (*kubelet.Kub
 
 	k, err := kubelet.NewMainKubelet(
 		kc.Hostname,
+		kc.ContainerRuntimeChoice,
 		kc.DockerClient,
 		kc.EtcdClient,
 		kubeClient,
