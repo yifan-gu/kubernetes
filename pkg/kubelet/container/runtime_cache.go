@@ -31,6 +31,7 @@ var (
 
 type RuntimeCache interface {
 	ListPods() ([]*api.Pod, error)
+	ForceUpdateIfOlder(time.Time) error
 }
 
 // NewRuntimeCache creates a container runtime cache.
@@ -83,6 +84,20 @@ func (r *runtimeCache) ListPods() ([]*api.Pod, error) {
 		go r.startUpdatingCache()
 	}
 	return r.pods, nil
+}
+
+func (r *runtimeCache) ForceUpdateIfOlder(minExpectedCacheTime time.Time) error {
+	r.Lock()
+	defer r.Unlock()
+	if r.cacheTime.Before(minExpectedCacheTime) {
+		pods, err := r.runtime.ListPods()
+		if err != nil {
+			return err
+		}
+		r.pods = pods
+		r.cacheTime = time.Now()
+	}
+	return nil
 }
 
 // startUpdateingCache continues to invoke ListPods to get the newest result until

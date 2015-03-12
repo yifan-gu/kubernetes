@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"time"
 
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/volume"
@@ -48,6 +49,10 @@ func NewFakeRuntimeCache(runtime Runtime) RuntimeCache {
 
 func (f *FakeRuntimeCache) ListPods() ([]*api.Pod, error) {
 	return f.runtime.ListPods()
+}
+
+func (f *FakeRuntimeCache) ForceUpdateIfOlder(time.Time) error {
+	return nil
 }
 
 // ClearCalls resets the FakeRuntime to the initial state.
