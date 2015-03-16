@@ -21,6 +21,7 @@ import (
 	"os"
 	"path"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,8 +61,8 @@ func TestVersion(t *testing.T) {
 	}
 }
 
-// fetchAndVerifyPod tests if the expected pod is in the expected state.
-// If so returns the pod we found.
+// fetchAndVerifyPod tests if the expected pod is in the expected state and if
+// has a binded IP address. If so returns the pod we found.
 func fetchAndVerifyPod(rkt *Runtime, expectedPod *api.BoundPod, expectedState string, t *testing.T) *api.Pod {
 	pods, err := rkt.ListPods()
 	if err != nil {
@@ -79,12 +80,25 @@ func fetchAndVerifyPod(rkt *Runtime, expectedPod *api.BoundPod, expectedState st
 	}
 	if foundPod == nil {
 		t.Errorf("Cannot find the pod: %v", expectedPod.Name)
+		return nil
 	}
+	// IP should be the form xx.xx.xx.xx
+	if expectedState == "running" {
+		if len(strings.Split(foundPod.Status.PodIP, ".")) != 4 {
+			t.Errorf("PodIP is wrong: %v", foundPod.Status.PodIP)
+			return nil
+		}
+	}
+
 	for _, status := range foundPod.Status.Info {
 		switch expectedState {
 		case "running":
 			if status.State.Running == nil {
 				t.Errorf("Container status is not %v", expectedState)
+				return nil
+			}
+			if len(strings.Split(status.PodIP, ".")) != 4 {
+				t.Errorf("PodIP is wrong: %v", foundPod.Status.PodIP)
 				return nil
 			}
 		case "termination":

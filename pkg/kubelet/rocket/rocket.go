@@ -154,10 +154,15 @@ func (r *Runtime) ListPods() ([]*api.Pod, error) {
 		return nil, err
 	}
 
+	podInfos, err := r.getPodInfos()
+	if err != nil {
+		return nil, err
+	}
+
 	var pods []*api.Pod
 	for _, u := range units {
 		if strings.HasPrefix(u.Name, kubernetesUnitPrefix) {
-			pod, err := r.makePod(u.Name)
+			pod, err := r.makePod(u.Name, podInfos)
 			if err != nil {
 				glog.Warningf("Cannot construct pod from unit file: %v.", err)
 				continue
@@ -260,9 +265,60 @@ func (r *Runtime) RunCommand(args ...string) ([]string, error) {
 	return strings.Split(strings.TrimSpace(string(output)), "\n"), nil
 }
 
-// getPodsState returns a map of [pod-uuid]:[pod-state].
-func (r *Runtime) getPodsState() (map[string]string, error) {
-	result := make(map[string]string)
+type podInfo struct {
+	state       string
+	networkInfo string
+}
+
+// getIP returns the IP of a pod by parsing the network info.
+// The network info looks like this:
+//
+// default:ip4=172.16.28.3, database:ip4=172.16.28.42
+//
+func (p *podInfo) getIP() string {
+	parts := strings.Split(p.networkInfo, ",")
+
+	for _, part := range parts {
+		if strings.HasPrefix(part, "default:") {
+			return strings.Split(part, "=")[1]
+		}
+	}
+	return ""
+}
+
+// getContainerStatus converts the rocket pod state to the api.containerStatus.
+// TODO(yifan): Get more detailed info such as Image, ImageID, etc.
+func (p *podInfo) getContainerStatus() api.ContainerStatus {
+	var status api.ContainerStatus
+	switch p.state {
+	case podStateRunning:
+		// TODO(yifan): Get StartedAt.
+		status.State = api.ContainerState{Running: &api.ContainerStateRunning{}}
+	case podStateEmbryo, podStatePreparing, podStatePrepared:
+		status.State = api.ContainerState{Waiting: &api.ContainerStateWaiting{}}
+	case podStateExited, podStateDeleting, podStateGone:
+		status.State = api.ContainerState{Termination: &api.ContainerStateTerminated{}}
+	default:
+		glog.Warningf("Unknown pod state: %q", p.state)
+	}
+	status.PodIP = p.getIP()
+	return status
+}
+
+func (p *podInfo) toPodStatus(pod *api.Pod) api.PodStatus {
+	var status api.PodStatus
+	status.PodIP = p.getIP()
+	// For now just make every container's state as same as the pod.
+	status.Info = make(map[string]api.ContainerStatus)
+	for _, container := range pod.Spec.Containers {
+		status.Info[container.Name] = p.getContainerStatus()
+
+	}
+	return status
+}
+
+// getPodInfos returns a map of [pod-uuid]:*podInfo
+func (r *Runtime) getPodInfos() (map[string]*podInfo, error) {
 	output, err := r.RunCommand("list", "--no-legend")
 	if err != nil {
 		return nil, err
@@ -273,77 +329,35 @@ func (r *Runtime) getPodsState() (map[string]string, error) {
 		return nil, nil
 	}
 
-	// Example output of current 'rkt list' (version <= 0.4.0):
-	// UUID                                 ACI     STATE
-	// 2372bc17-47cb-43fb-8d78-20b31729feda	foo     running
+	// Example output of current 'rkt list' (version == 0.4.1):
+	// UUID                                 ACI     STATE      NETWORKS
+	// 2372bc17-47cb-43fb-8d78-20b31729feda	foo     running    default:ip4=172.16.28.3
 	//                                      bar
 	// 40e2813b-9d5d-4146-a817-0de92646da96 foo     exited
 	// 40e2813b-9d5d-4146-a817-0de92646da96 bar     exited
 	//
 	// With '--no-legend', the first line is eliminated.
+
+	result := make(map[string]*podInfo)
 	for _, line := range output {
 		tuples := strings.Split(strings.TrimSpace(line), "\t")
-		if len(tuples) != 3 {
+		if len(tuples) < 3 { // At least it should have 3 entries.
 			continue
 		}
-		result[tuples[0]] = tuples[2]
+		info := &podInfo{
+			state: tuples[2],
+		}
+		if len(tuples) == 4 {
+			info.networkInfo = tuples[3]
+		}
+		result[tuples[0]] = info
 	}
 	return result, nil
 }
 
-// getPodStatus fills the status of the given pod. Especially, it will
-// fill the status for each container in the pod.
-func (r *Runtime) getPodStatus(pod *api.Pod) error {
-	// TODO(yifan) Cache this.
-	podStates, err := r.getPodsState()
-	if err != nil {
-		return err
-	}
-
-	rktID, found := pod.Annotations[rocketIDKey]
-	if !found {
-		// TODO(yifan): Maybe we should panic here...
-		return fmt.Errorf("rocket: cannot find rocket pod: %v, this is impossible", pod)
-	}
-
-	state, found := podStates[rktID]
-	if !found {
-		return fmt.Errorf("rocket: cannot find the state for pod: %q, rocket ID: %q", pod.Name, rktID)
-	}
-
-	// For now just make every container's state as same as the pod.
-	pod.Status.Info = make(map[string]api.ContainerStatus)
-	for _, container := range pod.Spec.Containers {
-		// TODO(yifan): Pull out creationg, starting time.
-		switch state {
-		case podStateRunning:
-			pod.Status.Info[container.Name] = api.ContainerStatus{
-				State: api.ContainerState{
-					Running: &api.ContainerStateRunning{},
-				},
-			}
-		case podStateEmbryo, podStatePreparing, podStatePrepared:
-			pod.Status.Info[container.Name] = api.ContainerStatus{
-				State: api.ContainerState{
-					Waiting: &api.ContainerStateWaiting{},
-				},
-			}
-		case podStateExited, podStateDeleting, podStateGone:
-			pod.Status.Info[container.Name] = api.ContainerStatus{
-				State: api.ContainerState{
-					Termination: &api.ContainerStateTerminated{},
-				},
-			}
-		default:
-			return fmt.Errorf("rocket: unexpected state: %q", state)
-		}
-	}
-	return nil
-}
-
 // makePod constructs the pod by reading information from the given unit file
-// and from rocket APIs.
-func (r *Runtime) makePod(unitName string) (*api.Pod, error) {
+// and from the pod infos.
+func (r *Runtime) makePod(unitName string, podInfos map[string]*podInfo) (*api.Pod, error) {
 	f, err := os.Open(path.Join(systemdServiceDir, unitName))
 	if err != nil {
 		return nil, err
@@ -370,10 +384,17 @@ func (r *Runtime) makePod(unitName string) (*api.Pod, error) {
 		}
 	}
 
-	if err = r.getPodStatus(&pod); err != nil {
-		glog.Errorf("Error getting pod status of pod %q.", pod.Name)
-		return nil, err
+	rktID, found := pod.Annotations[rocketIDKey]
+	if !found {
+		// TODO(yifan): Maybe we should panic here...
+		return nil, fmt.Errorf("rocket: cannot find rocket pod: %v, this is impossible", pod)
 	}
+	info, found := podInfos[rktID]
+	if !found {
+		glog.Warningf("Cannot find pod infos for pod %q, rocket uuid: %q", pod.Name, rktID)
+		return &pod, nil
+	}
+	pod.Status = info.toPodStatus(&pod)
 	return &pod, nil
 }
 
@@ -427,7 +448,7 @@ func (r *Runtime) preparePod(pod *api.BoundPod, volumeMap map[string]volume.Inte
 		{
 			Section: "Service",
 			Name:    "ExecStart",
-			Value:   fmt.Sprintf("%s run-prepared %s", r.absPath, uuid),
+			Value:   fmt.Sprintf("%s run-prepared --private-net --spawn-metadata-svc %s", r.absPath, uuid),
 		},
 	}
 
