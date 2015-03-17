@@ -63,9 +63,9 @@ func (kl *Kubelet) runOnce(pods []api.BoundPod, retryDelay time.Duration) (resul
 		go func() {
 			var err error
 			if kl.containerRuntimeChoice == "docker" {
-				err = kl.runDockerPod(pod, retryDelay)
+				err = kl.runAndWaitDockerPod(pod, retryDelay)
 			} else {
-				err = kl.runPod(pod, retryDelay)
+				err = kl.runAndWaitPod(pod, retryDelay)
 			}
 			ch <- RunPodResult{&pod, err}
 		}()
@@ -91,8 +91,8 @@ func (kl *Kubelet) runOnce(pods []api.BoundPod, retryDelay time.Duration) (resul
 	return results, err
 }
 
-// runDockerPod runs a single pod and wait until all containers are running.
-func (kl *Kubelet) runDockerPod(pod api.BoundPod, retryDelay time.Duration) error {
+// runAndWaitDockerPod runs a single pod and wait until all containers are running.
+func (kl *Kubelet) runAndWaitDockerPod(pod api.BoundPod, retryDelay time.Duration) error {
 	delay := retryDelay
 	retry := 0
 	for {
@@ -144,8 +144,8 @@ func (kl *Kubelet) isPodRunning(pod api.BoundPod, dockerContainers dockertools.D
 	return true, nil
 }
 
-// runPod runs a single pod and wait until all containers are running.
-func (kl *Kubelet) runPod(pod api.BoundPod, retryDelay time.Duration) error {
+// runANdWaitPod runs a single pod and wait until all containers are running.
+func (kl *Kubelet) runAndWaitPod(pod api.BoundPod, retryDelay time.Duration) error {
 	delay := retryDelay
 	retry := 0
 	for {

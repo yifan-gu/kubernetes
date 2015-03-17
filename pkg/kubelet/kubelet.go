@@ -178,7 +178,7 @@ func NewMainKubelet(
 		statusUpdateFrequency:          statusUpdateFrequency,
 		resyncInterval:                 resyncInterval,
 		podInfraContainerImage:         podInfraContainerImage,
-		dockerIDToRef:                  map[dockertools.DockerID]*api.ObjectReference{},
+		containerIDToRef:               map[string]*api.ObjectReference{},
 		runner:                         dockertools.NewDockerContainerCommandRunner(dockerClient),
 		httpClient:                     &http.Client{},
 		pullQPS:                        pullQPS,
@@ -262,8 +262,8 @@ type Kubelet struct {
 
 	// Needed to report events for containers belonging to deleted/modified pods.
 	// Tracks references for reporting events
-	dockerIDToRef map[dockertools.DockerID]*api.ObjectReference
-	refLock       sync.RWMutex
+	containerIDToRef map[string]*api.ObjectReference
+	refLock          sync.RWMutex
 
 	// Optional, defaults to simple Docker implementation
 	dockerPuller dockertools.DockerPuller
@@ -757,27 +757,27 @@ func containerRef(pod *api.BoundPod, container *api.Container) (*api.ObjectRefer
 }
 
 // setRef stores a reference to a pod's container, associating it with the given docker id.
-func (kl *Kubelet) setRef(id dockertools.DockerID, ref *api.ObjectReference) {
+func (kl *Kubelet) setRef(id string, ref *api.ObjectReference) {
 	kl.refLock.Lock()
 	defer kl.refLock.Unlock()
-	if kl.dockerIDToRef == nil {
-		kl.dockerIDToRef = map[dockertools.DockerID]*api.ObjectReference{}
+	if kl.containerIDToRef == nil {
+		kl.containerIDToRef = map[string]*api.ObjectReference{}
 	}
-	kl.dockerIDToRef[id] = ref
+	kl.containerIDToRef[id] = ref
 }
 
 // clearRef forgets the given docker id and its associated container reference.
-func (kl *Kubelet) clearRef(id dockertools.DockerID) {
+func (kl *Kubelet) clearRef(id string) {
 	kl.refLock.Lock()
 	defer kl.refLock.Unlock()
-	delete(kl.dockerIDToRef, id)
+	delete(kl.containerIDToRef, id)
 }
 
 // getRef returns the container reference of the given id, or (nil, false) if none is stored.
-func (kl *Kubelet) getRef(id dockertools.DockerID) (ref *api.ObjectReference, ok bool) {
+func (kl *Kubelet) getRef(id string) (ref *api.ObjectReference, ok bool) {
 	kl.refLock.RLock()
 	defer kl.refLock.RUnlock()
-	ref, ok = kl.dockerIDToRef[id]
+	ref, ok = kl.containerIDToRef[id]
 	return ref, ok
 }
 
@@ -817,7 +817,7 @@ func (kl *Kubelet) runContainer(pod *api.BoundPod, container *api.Container, pod
 	}
 	// Remember this reference so we can report events about this container
 	if ref != nil {
-		kl.setRef(dockertools.DockerID(dockerContainer.ID), ref)
+		kl.setRef(dockerContainer.ID, ref)
 		kl.recorder.Eventf(ref, "created", "Created with docker id %v", dockerContainer.ID)
 	}
 
@@ -1033,7 +1033,7 @@ func (kl *Kubelet) killContainerByID(ID string) error {
 	kl.readiness.remove(ID)
 	err := kl.dockerClient.StopContainer(ID, 10)
 
-	ref, ok := kl.getRef(dockertools.DockerID(ID))
+	ref, ok := kl.getRef(ID)
 	if !ok {
 		glog.Warningf("No ref for pod '%v'", ID)
 	} else {
@@ -1301,7 +1301,8 @@ func (kl *Kubelet) computePodContainerChanges(pod *api.BoundPod, containersInPod
 				// look for changes in the container.
 				containerChanged := hash != 0 && hash != expectedHash
 				if !containerChanged {
-					result, err := kl.probeContainer(pod, podStatus, container, dockerContainer)
+					p := &api.Pod{pod.TypeMeta, pod.ObjectMeta, pod.Spec, podStatus}
+					result, err := kl.probeContainer(p, container, dockerContainer.ID)
 					if err != nil {
 						// TODO(vmarmol): examine this logic.
 						glog.Infof("probe no-error: %s", container.Name)
@@ -2224,7 +2225,7 @@ func (kl *Kubelet) SyncPods(allPods []api.BoundPod, podSyncTypes map[types.UID]m
 		}
 
 		glog.V(1).Infof("Killing unwanted pod %+v", pod)
-		if err = kl.containerRuntime.KillPod(pod); err != nil {
+		if err = kl.killPod(pod); err != nil {
 			glog.Errorf("Error killing pod %+v: %v", pod, err)
 		}
 	}
@@ -2270,8 +2271,8 @@ func (kl *Kubelet) syncPod(pod *api.BoundPod, runningPod *api.Pod) error {
 	}
 
 	if runningPod == nil {
-		glog.V(4).Infof("Pod is not running, let's start the pod")
-		return kl.containerRuntime.RunPod(pod, podVolumes)
+		glog.Infof("Pod is not running, creating...")
+		return kl.runPod(pod, podVolumes)
 	}
 
 	// Add references to all containers.
@@ -2286,53 +2287,55 @@ func (kl *Kubelet) syncPod(pod *api.BoundPod, runningPod *api.Pod) error {
 	}
 
 	for _, ctnr := range pod.Spec.Containers {
+		// Start the containter if it does not exist.
 		index, runningContainer := containersInPod.findContainerByName(ctnr.Name)
 		if index < 0 {
-			glog.V(3).Infof("pod %q container %q does not exist, creating...", podFullName, ctnr.Name)
-			if err := kl.containerRuntime.RunContainerInPod(ctnr, runningPod, podVolumes); err != nil {
+			glog.Infof("pod %q container %q does not exist, creating...", podFullName, ctnr.Name)
+			if err := kl.runContainerInPod(ctnr, runningPod, podVolumes); err != nil {
 				glog.Errorf("Error running pod %q container %q: %v", podFullName, ctnr.Name, err)
 			}
 			continue
 		}
 
+		// Restart the container if the spec has changed.
 		expectedHash := hashContainer(&ctnr)
 		hash := hashContainer(runningContainer)
-		containerChanged := expectedHash != hash
-		containerHealthy, err := probeContainer(runningContainer, runningPod) // TODO(yifan): Should be a no-op if the container has already exited.
-		if err != nil {
-			glog.V(1).Infof("liveness/readiness probe errored: %v", err)
+		if expectedHash != hash {
+			glog.Infof("Container %q's spec has changed(oldHash: %v, newHash: %v), will restart...", ctnr.Name, hash, expectedHash)
+			if err = kl.restartContainerInPod(ctnr, runningPod, podVolumes); err != nil {
+				glog.Errorf("Failed to restart container %q: %v", runningContainer.Name, err)
+			}
 			containersInPod.removeContainerByName(ctnr.Name)
 			continue
 		}
-		glog.V(4).Infof("containerChanged: %v, containerHealthy: %v", containerChanged, containerHealthy)
 
-		// TODO(yifan): should find a way to know whether it exits normally.
-		if containerChanged || !containerHealthy {
-			// if need restart.
-			if err = kl.RestartContainerInPod(ctnr, runningPod, podVolumes); err != nil {
-				glog.V(1).Infof("Failed to restart container %q: %v", runningContainer.Name, err)
-			}
+		// Restart the container if it's unhealthy.
+		containerID := makeContainerID(*runningContainer, runningPod)
+		result, err := kl.probeContainer(runningPod, *runningContainer, containerID) // TODO(yifan): Should be a no-op if the container has already exited.
+		if err != nil {
+			// TODO(vmarmol): examine this logic.
+			glog.Errorf("Probe container %q error: %v, skip this time", ctnr.Name, err)
+			containersInPod.removeContainerByName(ctnr.Name)
+			continue
+		}
+		if result == probe.Success {
+			glog.V(4).Infof("probe success: %s", ctnr.Name)
+			containersInPod.removeContainerByName(ctnr.Name)
+			continue
+		}
+		glog.Infof("container %q is unhealthy, will restart...", ctnr.Name)
+
+		if err = kl.restartContainerInPod(ctnr, runningPod, podVolumes); err != nil {
+			glog.Errorf("Failed to restart container %q: %v", runningContainer.Name, err)
 		}
 		containersInPod.removeContainerByName(ctnr.Name)
 	}
+
 	// Kill all unidentified containers.
 	for _, ctnr := range containersInPod {
-		if err = kl.containerRuntime.KillContainerInPod(*ctnr, runningPod); err != nil {
-			glog.V(1).Infof("Failed to kill container %q: %v", ctnr.Name, err)
+		if err = kl.killContainerInPod(*ctnr, runningPod); err != nil {
+			glog.Errorf("Failed to kill container %q: %v", ctnr.Name, err)
 		}
-	}
-	return nil
-}
-
-// RestartContainersInPod invokes container.Runtime.KillContainerInPod and container.Runtime.RunContainerInPod
-// to restart the container.
-func (kl *Kubelet) RestartContainerInPod(container api.Container, pod *api.Pod, volumeMap map[string]volume.Interface) error {
-	if err := kl.containerRuntime.KillContainerInPod(container, pod); err != nil {
-		return err
-	}
-	// TODO(yifan): Check restart policy.
-	if err := kl.containerRuntime.RunContainerInPod(container, pod, volumeMap); err != nil {
-		return err
 	}
 	return nil
 }
@@ -2372,4 +2375,94 @@ func findPodByID(uid types.UID, pods []*api.Pod) *api.Pod {
 		}
 	}
 	return nil
+}
+
+func makeContainerID(ctnr api.Container, pod *api.Pod) string {
+	return fmt.Sprintf("%s_%s_%s_%s", pod.UID, pod.Name, pod.Namespace, ctnr.Name)
+}
+
+func (kl *Kubelet) runPod(pod *api.BoundPod, volumes map[string]volume.Interface) error {
+
+	for _, ctnr := range pod.Spec.Containers {
+		var err error
+
+		id := makeContainerID(ctnr, boundPodToPod(pod))
+		ref, ok := kl.getRef(id)
+		if !ok {
+			ref, err = containerRef(pod, &ctnr)
+			if err != nil {
+				glog.Errorf("Couldn't make a ref to pod %q, container %q: %v", pod.Name, ctnr.Name, err)
+			}
+			kl.setRef(id, ref)
+		}
+		kl.recorder.Eventf(ref, "Creating", "Creating %q", id)
+	}
+	return kl.containerRuntime.RunPod(pod, volumes)
+}
+
+func (kl *Kubelet) killPod(pod *api.Pod) error {
+	for _, ctnr := range pod.Spec.Containers {
+		id := makeContainerID(ctnr, pod)
+		ref, ok := kl.getRef(id)
+		if !ok {
+			glog.Warningf("No ref for %q", id)
+		} else {
+			kl.recorder.Eventf(ref, "killing", "Killing %q", id)
+		}
+	}
+	return kl.containerRuntime.KillPod(pod)
+}
+
+func (kl *Kubelet) runContainerInPod(ctnr api.Container, pod *api.Pod, volumes map[string]volume.Interface) error {
+	var err error
+
+	id := makeContainerID(ctnr, pod)
+	ref, ok := kl.getRef(id)
+	if !ok {
+		ref, err = containerRef(podToBoundPod(pod), &ctnr)
+		if err != nil {
+			glog.Errorf("Couldn't make a ref to pod %q, container %q: %v", pod.Name, ctnr.Name, err)
+		}
+		kl.setRef(id, ref)
+	}
+	kl.recorder.Eventf(ref, "Creating", "Creating %q", id)
+	return kl.containerRuntime.RunContainerInPod(ctnr, pod, volumes)
+}
+
+func (kl *Kubelet) killContainerInPod(ctnr api.Container, pod *api.Pod) error {
+	id := makeContainerID(ctnr, pod)
+	ref, ok := kl.getRef(id)
+	if !ok {
+		glog.Warningf("No ref for %q", id)
+	} else {
+		kl.recorder.Eventf(ref, "killing", "Killing %q", id)
+	}
+
+	return kl.containerRuntime.KillContainerInPod(ctnr, pod)
+}
+
+func (kl *Kubelet) restartContainerInPod(ctnr api.Container, pod *api.Pod, volumeMap map[string]volume.Interface) error {
+	id := makeContainerID(ctnr, pod)
+	ref, ok := kl.getRef(id)
+	if !ok {
+		glog.Warningf("No ref for container %q", id)
+	} else {
+		kl.recorder.Eventf(ref, "Restarting", "Restarting %q", id)
+	}
+	if err := kl.containerRuntime.KillContainerInPod(ctnr, pod); err != nil {
+		return err
+	}
+	// TODO(yifan): Check restart policy.
+	if err := kl.containerRuntime.RunContainerInPod(ctnr, pod, volumeMap); err != nil {
+		return err
+	}
+	return nil
+}
+
+func podToBoundPod(pod *api.Pod) *api.BoundPod {
+	return &api.BoundPod{pod.TypeMeta, pod.ObjectMeta, pod.Spec}
+}
+
+func boundPodToPod(pod *api.BoundPod) *api.Pod {
+	return &api.Pod{pod.TypeMeta, pod.ObjectMeta, pod.Spec, api.PodStatus{}}
 }

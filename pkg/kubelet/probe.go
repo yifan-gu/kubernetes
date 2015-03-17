@@ -44,7 +44,7 @@ func (kl *Kubelet) probeContainer(pod *api.Pod, container api.Container, contain
 	live, err := kl.probeContainerLiveness(pod, container, containerID)
 	if err != nil {
 		glog.V(1).Infof("Liveness probe errored: %v", err)
-		kl.readiness.set(containerID)
+		kl.readiness.set(containerID, false)
 		return probe.Unknown, err
 	}
 	if live != probe.Success {
@@ -84,7 +84,7 @@ func (kl *Kubelet) probeContainerLiveness(pod *api.Pod, container api.Container,
 	if !found {
 		return probe.Unknown, fmt.Errorf("probe: cannot find the status of container %q in pod %q", containerID, pod.Name)
 	}
-	if time.Now().Unix()-status.Created < p.InitialDelaySeconds {
+	if time.Now().Unix()-status.CreatedAt.Unix() < p.InitialDelaySeconds {
 		return probe.Success, nil
 	}
 	return kl.runProbeWithRetries(p, pod, container, maxProbeRetries)
@@ -101,7 +101,7 @@ func (kl *Kubelet) probeContainerReadiness(pod *api.Pod, container api.Container
 	if !found {
 		return probe.Unknown, fmt.Errorf("probe: cannot find the status of container %q in pod %q", containerID, pod.Name)
 	}
-	if time.Now().Unix()-status.Created < p.InitialDelaySeconds {
+	if time.Now().Unix()-status.CreatedAt.Unix() < p.InitialDelaySeconds {
 		return probe.Failure, nil
 	}
 	return kl.runProbeWithRetries(p, pod, container, maxProbeRetries)
@@ -124,7 +124,7 @@ func (kl *Kubelet) runProbeWithRetries(p *api.Probe, pod *api.Pod, container api
 func (kl *Kubelet) runProbe(p *api.Probe, pod *api.Pod, container api.Container) (probe.Result, error) {
 	timeout := time.Duration(p.TimeoutSeconds) * time.Second
 	if p.Exec != nil {
-		return kl.prober.exec.Probe(kl.newExecInContainer(pod, container))
+		return kl.prober.exec.Probe(kl.newExecInContainer(podToBoundPod(pod), container))
 	}
 	if p.HTTPGet != nil {
 		port, err := extractPort(p.HTTPGet.Port, container)
@@ -139,7 +139,7 @@ func (kl *Kubelet) runProbe(p *api.Probe, pod *api.Pod, container api.Container)
 		if err != nil {
 			return probe.Unknown, err
 		}
-		return kl.prober.tcp.Probe(pod.status.PodIP, port, timeout)
+		return kl.prober.tcp.Probe(pod.Status.PodIP, port, timeout)
 	}
 	glog.Warningf("Failed to find probe builder for %s %+v", container.Name, container.LivenessProbe)
 	return probe.Unknown, nil
