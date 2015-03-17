@@ -24,14 +24,12 @@ import (
 	"time"
 
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/dockertools"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/probe"
 	execprobe "github.com/GoogleCloudPlatform/kubernetes/pkg/probe/exec"
 	httprobe "github.com/GoogleCloudPlatform/kubernetes/pkg/probe/http"
 	tcprobe "github.com/GoogleCloudPlatform/kubernetes/pkg/probe/tcp"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util/exec"
-	"github.com/fsouza/go-dockerclient"
 
 	"github.com/golang/glog"
 )
@@ -41,32 +39,31 @@ const maxProbeRetries = 3
 // probeContainer probes the liveness/readiness of the given container.
 // If the container's liveness probe is unsuccessful, set readiness to false.
 // If liveness is successful, do a readiness check and set readiness accordingly.
-func (kl *Kubelet) probeContainer(pod *api.BoundPod, status api.PodStatus, container api.Container, dockerContainer *docker.APIContainers) (probe.Result, error) {
+func (kl *Kubelet) probeContainer(pod *api.Pod, container api.Container, containerID string) (probe.Result, error) {
 	// Probe liveness.
-	live, err := kl.probeContainerLiveness(pod, status, container, dockerContainer)
+	live, err := kl.probeContainerLiveness(pod, container, containerID)
 	if err != nil {
 		glog.V(1).Infof("Liveness probe errored: %v", err)
-		kl.readiness.set(dockerContainer.ID, false)
+		kl.readiness.set(containerID)
 		return probe.Unknown, err
 	}
 	if live != probe.Success {
 		glog.V(1).Infof("Liveness probe unsuccessful: %v", live)
-		kl.readiness.set(dockerContainer.ID, false)
+		kl.readiness.set(containerID, false)
 		return live, nil
 	}
 
 	// Probe readiness.
-	ready, err := kl.probeContainerReadiness(pod, status, container, dockerContainer)
+	ready, err := kl.probeContainerReadiness(pod, container, containerID)
 	if err == nil && ready == probe.Success {
 		glog.V(3).Infof("Readiness probe successful: %v", ready)
-		kl.readiness.set(dockerContainer.ID, true)
+		kl.readiness.set(containerID, true)
 		return probe.Success, nil
 	}
 
 	glog.V(1).Infof("Readiness probe failed/errored: %v, %v", ready, err)
-	kl.readiness.set(dockerContainer.ID, false)
+	kl.readiness.set(containerID, false)
 
-	containerID := dockertools.DockerID(dockerContainer.ID)
 	ref, ok := kl.getRef(containerID)
 	if !ok {
 		glog.Warningf("No ref for pod '%v' - '%v'", containerID, container.Name)
@@ -78,37 +75,45 @@ func (kl *Kubelet) probeContainer(pod *api.BoundPod, status api.PodStatus, conta
 
 // probeContainerLiveness probes the liveness of a container.
 // If the initalDelay since container creation on liveness probe has not passed the probe will return probe.Success.
-func (kl *Kubelet) probeContainerLiveness(pod *api.BoundPod, status api.PodStatus, container api.Container, dockerContainer *docker.APIContainers) (probe.Result, error) {
+func (kl *Kubelet) probeContainerLiveness(pod *api.Pod, container api.Container, containerID string) (probe.Result, error) {
 	p := container.LivenessProbe
 	if p == nil {
 		return probe.Success, nil
 	}
-	if time.Now().Unix()-dockerContainer.Created < p.InitialDelaySeconds {
+	status, found := pod.Status.Info[containerID]
+	if !found {
+		return probe.Unknown, fmt.Errorf("probe: cannot find the status of container %q in pod %q", containerID, pod.Name)
+	}
+	if time.Now().Unix()-status.Created < p.InitialDelaySeconds {
 		return probe.Success, nil
 	}
-	return kl.runProbeWithRetries(p, pod, status, container, maxProbeRetries)
+	return kl.runProbeWithRetries(p, pod, container, maxProbeRetries)
 }
 
 // probeContainerLiveness probes the readiness of a container.
 // If the initial delay on the readiness probe has not passed the probe will return probe.Failure.
-func (kl *Kubelet) probeContainerReadiness(pod *api.BoundPod, status api.PodStatus, container api.Container, dockerContainer *docker.APIContainers) (probe.Result, error) {
+func (kl *Kubelet) probeContainerReadiness(pod *api.Pod, container api.Container, containerID string) (probe.Result, error) {
 	p := container.ReadinessProbe
 	if p == nil {
 		return probe.Success, nil
 	}
-	if time.Now().Unix()-dockerContainer.Created < p.InitialDelaySeconds {
+	status, found := pod.Status.Info[containerID]
+	if !found {
+		return probe.Unknown, fmt.Errorf("probe: cannot find the status of container %q in pod %q", containerID, pod.Name)
+	}
+	if time.Now().Unix()-status.Created < p.InitialDelaySeconds {
 		return probe.Failure, nil
 	}
-	return kl.runProbeWithRetries(p, pod, status, container, maxProbeRetries)
+	return kl.runProbeWithRetries(p, pod, container, maxProbeRetries)
 }
 
 // runProbeWithRetries tries to probe the container in a finite loop, it returns the last result
 // if it never succeeds.
-func (kl *Kubelet) runProbeWithRetries(p *api.Probe, pod *api.BoundPod, status api.PodStatus, container api.Container, retires int) (probe.Result, error) {
+func (kl *Kubelet) runProbeWithRetries(p *api.Probe, pod *api.Pod, container api.Container, retires int) (probe.Result, error) {
 	var err error
 	var result probe.Result
 	for i := 0; i < retires; i++ {
-		result, err = kl.runProbe(p, pod, status, container)
+		result, err = kl.runProbe(p, pod, container)
 		if result == probe.Success {
 			return probe.Success, nil
 		}
@@ -116,7 +121,7 @@ func (kl *Kubelet) runProbeWithRetries(p *api.Probe, pod *api.BoundPod, status a
 	return result, err
 }
 
-func (kl *Kubelet) runProbe(p *api.Probe, pod *api.BoundPod, status api.PodStatus, container api.Container) (probe.Result, error) {
+func (kl *Kubelet) runProbe(p *api.Probe, pod *api.Pod, container api.Container) (probe.Result, error) {
 	timeout := time.Duration(p.TimeoutSeconds) * time.Second
 	if p.Exec != nil {
 		return kl.prober.exec.Probe(kl.newExecInContainer(pod, container))
@@ -126,7 +131,7 @@ func (kl *Kubelet) runProbe(p *api.Probe, pod *api.BoundPod, status api.PodStatu
 		if err != nil {
 			return probe.Unknown, err
 		}
-		host, port, path := extractGetParams(p.HTTPGet, status, port)
+		host, port, path := extractGetParams(p.HTTPGet, pod.Status, port)
 		return kl.prober.http.Probe(host, port, path, timeout)
 	}
 	if p.TCPSocket != nil {
@@ -134,7 +139,7 @@ func (kl *Kubelet) runProbe(p *api.Probe, pod *api.BoundPod, status api.PodStatu
 		if err != nil {
 			return probe.Unknown, err
 		}
-		return kl.prober.tcp.Probe(status.PodIP, port, timeout)
+		return kl.prober.tcp.Probe(pod.status.PodIP, port, timeout)
 	}
 	glog.Warningf("Failed to find probe builder for %s %+v", container.Name, container.LivenessProbe)
 	return probe.Unknown, nil

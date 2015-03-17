@@ -2373,7 +2373,3 @@ func findPodByID(uid types.UID, pods []*api.Pod) *api.Pod {
 	}
 	return nil
 }
-
-func probeContainer(c *api.Container, pod *api.Pod) (bool, error) {
-	return true, nil
-}

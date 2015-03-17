@@ -451,7 +451,8 @@ type ContainerState struct {
 type ContainerStatus struct {
 	// TODO(dchen1107): Should we rename PodStatus to a more generic name or have a separate states
 	// defined for container?
-	State ContainerState `json:"state,omitempty"`
+	State     ContainerState `json:"state,omitempty"`
+	CreatedAt util.Time      `json:"createdAt,omitempty"`
 	// Ready specifies whether the conatiner has passed its readiness check.
 	Ready bool `json:"ready"`
 	// Note that this is calculated from dead containers.  But those containers are subject to

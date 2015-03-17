@@ -25,9 +25,11 @@ import (
 	"path"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/volume"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	"github.com/coreos/go-systemd/dbus"
 	"github.com/coreos/go-systemd/unit"
 	"github.com/golang/glog"
@@ -38,8 +40,13 @@ const (
 	systemdServiceDir    = "/run/systemd/system"
 
 	unitKubernetesSection = "X-Kubernetes"
-	rocketIDKey           = "RocketID"
 	unitPodName           = "POD"
+
+	// Keys stored in pod.Annotations.
+	rocketIDKey = "RocketID"
+	createdKey  = "Created"
+
+	timeLayout = ""
 )
 
 const (
@@ -268,6 +275,7 @@ func (r *Runtime) RunCommand(args ...string) ([]string, error) {
 type podInfo struct {
 	state       string
 	networkInfo string
+	created     time.Time
 }
 
 // getIP returns the IP of a pod by parsing the network info.
@@ -293,15 +301,24 @@ func (p *podInfo) getContainerStatus() api.ContainerStatus {
 	switch p.state {
 	case podStateRunning:
 		// TODO(yifan): Get StartedAt.
-		status.State = api.ContainerState{Running: &api.ContainerStateRunning{}}
+		status.State = api.ContainerState{
+			Running: &api.ContainerStateRunning{
+				StartedAt: util.NewTime(p.created),
+			},
+		}
 	case podStateEmbryo, podStatePreparing, podStatePrepared:
 		status.State = api.ContainerState{Waiting: &api.ContainerStateWaiting{}}
 	case podStateExited, podStateDeleting, podStateGone:
-		status.State = api.ContainerState{Termination: &api.ContainerStateTerminated{}}
+		status.State = api.ContainerState{
+			Termination: &api.ContainerStateTerminated{
+				StartedAt: util.NewTime(p.created),
+			},
+		}
 	default:
 		glog.Warningf("Unknown pod state: %q", p.state)
 	}
 	status.PodIP = p.getIP()
+	status.CreatedAt = util.NewTime(p.created)
 	return status
 }
 
@@ -312,7 +329,6 @@ func (p *podInfo) toPodStatus(pod *api.Pod) api.PodStatus {
 	status.Info = make(map[string]api.ContainerStatus)
 	for _, container := range pod.Spec.Containers {
 		status.Info[container.Name] = p.getContainerStatus()
-
 	}
 	return status
 }
@@ -386,14 +402,24 @@ func (r *Runtime) makePod(unitName string, podInfos map[string]*podInfo) (*api.P
 
 	rktID, found := pod.Annotations[rocketIDKey]
 	if !found {
-		// TODO(yifan): Maybe we should panic here...
-		return nil, fmt.Errorf("rocket: cannot find rocket pod: %v, this is impossible", pod)
+		return nil, fmt.Errorf("rocket: cannot find rocket ID of pod %v, unit file is broken", pod)
 	}
+	ct, found := pod.Annotations[createdKey]
+	if !found {
+		return nil, fmt.Errorf("rocket: cannot find rocket created time of pod %v, unit file is broken", pod)
+	}
+	created, err := time.Parse(timeLayout, ct)
+	if err != nil {
+		return nil, fmt.Errorf("rocket: cannot parse rocket created time: %v", err)
+	}
+
 	info, found := podInfos[rktID]
 	if !found {
 		glog.Warningf("Cannot find pod infos for pod %q, rocket uuid: %q", pod.Name, rktID)
 		return &pod, nil
 	}
+	info.created = created
+
 	pod.Status = info.toPodStatus(&pod)
 	return &pod, nil
 }
@@ -432,8 +458,9 @@ func (r *Runtime) preparePod(pod *api.BoundPod, volumeMap map[string]volume.Inte
 	uuid := output[0]
 	glog.V(4).Infof("'rkt prepare' returns %q.", uuid)
 
-	// Save the rocket uuid in pod annotations.
 	pod.Annotations[rocketIDKey] = uuid
+	pod.Annotations[createdKey] = time.Now().String()
+
 	b, err := json.Marshal(pod)
 	if err != nil {
 		return "", false, err
