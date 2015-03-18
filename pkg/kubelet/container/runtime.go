@@ -76,9 +76,25 @@ type Container struct {
 	// The name of the container, which should be the same as specified by
 	// api.Container.
 	Name string
-	// The image name of the container.
-	Image string
 	// Hash of the container, used for comparison. Optional for containers
 	// not managed by kubelet.
 	Hash uint64
+	// The path to the termination log in the container mount space.
+	TerminationMessagePath string
+	// The volume bindings in the container.
+	Volumes map[string]string
+}
+
+type Pods []*Pod
+
+// FindPodByID returns a pod in the pod list by UID. It returns nil
+// if not found.
+// TODO(yifan): Use a map?
+func (p Pods) FindPodByID(podUID types.UID) *Pod {
+	for _, pp := range p {
+		if pp.ID == podUID {
+			return pp
+		}
+	}
+	return nil
 }

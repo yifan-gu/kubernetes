@@ -32,6 +32,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/credentialprovider"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/container"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/leaky"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/types"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
@@ -607,9 +608,9 @@ func inspectContainer(client DockerInterface, dockerID, containerName, tPath str
 	return &result
 }
 
-// GetDockerPodStatus returns docker related status for all containers in the pod/manifest and
+// GetPodStatus returns docker related status for all containers in the pod/manifest and
 // infrastructure container
-func GetDockerPodStatus(client DockerInterface, manifest api.PodSpec, podFullName string, uid types.UID) (*api.PodStatus, error) {
+func GetPodStatus(client DockerInterface, manifest api.PodSpec, pod *container.Pod) (*api.PodStatus, error) {
 	var podStatus api.PodStatus
 	podStatus.Info = api.PodInfo{}
 
@@ -619,26 +620,8 @@ func GetDockerPodStatus(client DockerInterface, manifest api.PodSpec, podFullNam
 	}
 	expectedContainers[PodInfraContainerName] = api.Container{}
 
-	containers, err := client.ListContainers(docker.ListContainersOptions{All: true})
-	if err != nil {
-		return nil, err
-	}
-
-	for _, value := range containers {
-		if len(value.Names) == 0 {
-			continue
-		}
-		dockerManifestID, dockerUUID, dockerContainerName, _, err := ParseDockerName(value.Names[0])
-		if err != nil {
-			continue
-		}
-		if dockerManifestID != podFullName {
-			continue
-		}
-		if uid != "" && dockerUUID != uid {
-			continue
-		}
-		c, found := expectedContainers[dockerContainerName]
+	for _, value := range pod.Containers {
+		c, found := expectedContainers[value.Name]
 		terminationMessagePath := ""
 		if !found {
 			// TODO(dchen1107): should figure out why not continue here
@@ -647,22 +630,22 @@ func GetDockerPodStatus(client DockerInterface, manifest api.PodSpec, podFullNam
 			terminationMessagePath = c.TerminationMessagePath
 		}
 		// We assume docker return us a list of containers in time order
-		if containerStatus, found := podStatus.Info[dockerContainerName]; found {
+		if containerStatus, found := podStatus.Info[value.Name]; found {
 			containerStatus.RestartCount += 1
-			podStatus.Info[dockerContainerName] = containerStatus
+			podStatus.Info[value.Name] = containerStatus
 			continue
 		}
 
-		result := inspectContainer(client, value.ID, dockerContainerName, terminationMessagePath)
+		result := inspectContainer(client, string(value.ID), value.Name, terminationMessagePath)
 		if result.err != nil {
-			return nil, err
+			return nil, result.err
 		}
 		// Add user container information
-		if dockerContainerName == PodInfraContainerName {
+		if value.Name == PodInfraContainerName {
 			// Found network container
 			podStatus.PodIP = result.ip
 		} else {
-			podStatus.Info[dockerContainerName] = result.status
+			podStatus.Info[value.Name] = result.status
 		}
 	}
 
@@ -811,4 +794,53 @@ type ContainerCommandRunner interface {
 	GetDockerServerVersion() ([]uint, error)
 	ExecInContainer(containerID string, cmd []string, in io.Reader, out, err io.WriteCloser, tty bool) error
 	PortForward(podInfraContainerID string, port uint16, stream io.ReadWriteCloser) error
+}
+
+func makePod(client DockerInterface, podUID types.UID, containers []*docker.APIContainers) (*container.Pod, error) {
+	var pod container.Pod
+
+	for _, c := range containers {
+		_, _, containerName, hash, _ := ParseDockerName(c.Names[0])
+		pod.Containers = append(pod.Containers, &container.Container{
+			ID:   types.UID(c.ID),
+			Name: containerName,
+			Hash: hash,
+		})
+	}
+	pod.ID = podUID
+	return &pod, nil
+}
+
+func GetPods(client DockerInterface, all bool) ([]*container.Pod, error) {
+	var pods []*container.Pod
+
+	containers, err := GetKubeletDockerContainers(client, all)
+	if err != nil {
+		return nil, err
+	}
+
+	// Group containers by pod.
+	containerGroups := make(map[types.UID][]*docker.APIContainers)
+	for _, c := range containers {
+		_, podUID, _, _, err := ParseDockerName(c.Names[0])
+		if err != nil {
+			glog.Warningf("Parse docker container name %q error: %v", c.Names[0], err)
+			continue
+		}
+		// TODO(yifan): Seems to break container VM users?
+		// https://github.com/GoogleCloudPlatform/kubernetes/pull/5032#issuecomment-77432277
+		containerGroups[podUID] = append(containerGroups[podUID], c)
+	}
+
+	// Constructing the pod list.
+	for podUID, group := range containerGroups {
+		pod, err := makePod(client, podUID, group)
+		if err != nil {
+			// TODO(yifan): Use pod.Name for human readability.
+			glog.Warningf("make pod %q error: %v, skipping...", podUID, err)
+			continue
+		}
+		pods = append(pods, pod)
+	}
+	return pods, nil
 }
