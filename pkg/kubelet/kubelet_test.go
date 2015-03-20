@@ -37,6 +37,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client/record"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/cadvisor"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/container"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/dockertools"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/metrics"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/network"
@@ -86,8 +87,8 @@ func newTestKubelet(t *testing.T) *TestKubelet {
 	waitGroup := new(sync.WaitGroup)
 	kubelet.podWorkers = newPodWorkers(
 		fakeDockerCache,
-		func(pod *api.Pod, hasMirrorPod bool, containers dockertools.DockerContainers) error {
-			err := kubelet.syncPod(pod, hasMirrorPod, containers)
+		func(pod *api.Pod, hasMirrorPod bool, runningPod container.Pod) error {
+			err := kubelet.syncPod(pod, hasMirrorPod, runningPod)
 			waitGroup.Done()
 			return err
 		},
@@ -311,6 +312,34 @@ func TestKubeletDirsCompat(t *testing.T) {
 	}
 }
 
+func apiContainerToContainer(c docker.APIContainers) container.Container {
+	_, _, name, hash, _ := dockertools.ParseDockerName(c.Names[0])
+	return container.Container{
+		ID:   types.UID(c.ID),
+		Name: name,
+		Hash: hash,
+	}
+}
+
+func dockerContainersToPod(containers dockertools.DockerContainers) container.Pod {
+	var pod container.Pod
+	for _, c := range containers {
+		podFullName, podUID, name, hash, _ := dockertools.ParseDockerName(c.Names[0])
+		pod.Containers = append(pod.Containers, &container.Container{
+			ID:    types.UID(c.ID),
+			Name:  name,
+			Hash:  hash,
+			Image: c.Image,
+		})
+		// TODO(yifan): Only one evaluation is enough.
+		pod.ID = podUID
+		name, namespace, _ := ParsePodFullName(podFullName)
+		pod.Name = name
+		pod.Namespace = namespace
+	}
+	return pod
+}
+
 func TestKillContainerWithError(t *testing.T) {
 	containers := []docker.APIContainers{
 		{
@@ -332,7 +361,8 @@ func TestKillContainerWithError(t *testing.T) {
 		kubelet.readiness.set(c.ID, true)
 	}
 	kubelet.dockerClient = fakeDocker
-	err := kubelet.killContainer(&fakeDocker.ContainerList[0])
+	c := apiContainerToContainer(fakeDocker.ContainerList[0])
+	err := kubelet.killContainer(&c)
 	if err == nil {
 		t.Errorf("expected error, found nil")
 	}
@@ -369,7 +399,8 @@ func TestKillContainer(t *testing.T) {
 		kubelet.readiness.set(c.ID, true)
 	}
 
-	err := kubelet.killContainer(&fakeDocker.ContainerList[0])
+	c := apiContainerToContainer(fakeDocker.ContainerList[0])
+	err := kubelet.killContainer(&c)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -906,7 +937,7 @@ func TestSyncPodDeletesDuplicate(t *testing.T) {
 		},
 	}
 	kubelet.pods = append(kubelet.pods, bound)
-	err := kubelet.syncPod(&bound, false, dockerContainers)
+	err := kubelet.syncPod(&bound, false, dockerContainersToPod(dockerContainers))
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -947,7 +978,7 @@ func TestSyncPodBadHash(t *testing.T) {
 		},
 	}
 	kubelet.pods = append(kubelet.pods, bound)
-	err := kubelet.syncPod(&bound, false, dockerContainers)
+	err := kubelet.syncPod(&bound, false, dockerContainersToPod(dockerContainers))
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -1001,7 +1032,7 @@ func TestSyncPodUnhealthy(t *testing.T) {
 		},
 	}
 	kubelet.pods = append(kubelet.pods, bound)
-	err := kubelet.syncPod(&bound, false, dockerContainers)
+	err := kubelet.syncPod(&bound, false, dockerContainersToPod(dockerContainers))
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -1691,7 +1722,7 @@ func TestSyncPodEventHandlerFails(t *testing.T) {
 		},
 	}
 	kubelet.pods = append(kubelet.pods, bound)
-	err := kubelet.syncPod(&bound, false, dockerContainers)
+	err := kubelet.syncPod(&bound, false, dockerContainersToPod(dockerContainers))
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -3165,7 +3196,7 @@ func TestCreateMirrorPod(t *testing.T) {
 	}
 	kl.pods = append(kl.pods, pod)
 	hasMirrorPod := false
-	err := kl.syncPod(&pod, hasMirrorPod, dockertools.DockerContainers{})
+	err := kl.syncPod(&pod, hasMirrorPod, container.Pod{})
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
