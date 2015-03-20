@@ -610,7 +610,7 @@ func inspectContainer(client DockerInterface, dockerID, containerName, tPath str
 
 // GetPodStatus returns docker related status for all containers in the pod/manifest and
 // infrastructure container
-func GetPodStatus(client DockerInterface, manifest api.PodSpec, pod *container.Pod) (*api.PodStatus, error) {
+func GetPodStatus(client DockerInterface, manifest *api.PodSpec, pod *container.Pod) (*api.PodStatus, error) {
 	var podStatus api.PodStatus
 	podStatus.Info = api.PodInfo{}
 

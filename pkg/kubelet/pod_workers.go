@@ -22,6 +22,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client/record"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/container"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/dockertools"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/types"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
@@ -96,7 +97,8 @@ func (p *podWorkers) managePodLoop(podUpdates <-chan workUpdate) {
 				return
 			}
 
-			err = p.syncPodFn(newWork.pod, newWork.hasMirrorPod, pods.FindPodByID(newWork.pod.UID))
+			err = p.syncPodFn(newWork.pod, newWork.hasMirrorPod,
+				container.Pods(pods).FindPodByID(newWork.pod.UID))
 			if err != nil {
 				glog.Errorf("Error syncing pod %s, skipping: %v", newWork.pod.UID, err)
 				p.recorder.Eventf(newWork.pod, "failedSync", "Error syncing pod, skipping: %v", err)

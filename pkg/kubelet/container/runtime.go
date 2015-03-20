@@ -98,3 +98,16 @@ func (p Pods) FindPodByID(podUID types.UID) *Pod {
 	}
 	return nil
 }
+
+// FindContainerByName returns a container in the pod with the given name.
+// Note that when there are multiple containers with the same name, then only
+// the newest container with the given name will be return (assuming containers
+// are sorted in reversed time order).
+func (p Pod) FindContainerByName(containerName string) *Container {
+	for _, c := range p.Containers {
+		if c.Name == containerName {
+			return c
+		}
+	}
+	return nil
+}
