@@ -814,15 +814,6 @@ type ContainerCommandRunner interface {
 	PortForward(podInfraContainerID string, port uint16, stream io.ReadWriteCloser) error
 }
 
-// Parse the pod full name. TODO(yifan): This is duplicated with kubelet.ParsePodFullName.
-func parsePodFullName(podFullName string) (string, string, error) {
-	parts := strings.Split(podFullName, "_")
-	if len(parts) != 2 {
-		return "", "", fmt.Errorf("failed to parse the pod full name %q", podFullName)
-	}
-	return parts[0], parts[1], nil
-}
-
 func GetPods(client DockerInterface, all bool) ([]*container.Pod, error) {
 	pods := make(map[types.UID]*container.Pod)
 	var result []*container.Pod
@@ -845,7 +836,7 @@ func GetPods(client DockerInterface, all bool) ([]*container.Pod, error) {
 		}
 		pod, found := pods[podUID]
 		if !found {
-			name, namespace, err := parsePodFullName(podFullName)
+			name, namespace, err := container.ParsePodFullName(podFullName)
 			if err != nil {
 				glog.Warningf("Parse pod full name %q error: %v", podFullName, err)
 				continue
