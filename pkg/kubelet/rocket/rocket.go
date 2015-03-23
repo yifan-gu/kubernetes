@@ -258,6 +258,7 @@ func (r *Runtime) KillContainerInPod(container api.Container, pod *api.Pod) erro
 
 // RunCommand invokes 'rkt' and returns the result from stdout
 // in a list of strings.
+// TODO(yifan): Do not export this.
 func (r *Runtime) RunCommand(args ...string) ([]string, error) {
 	glog.V(4).Info("Run rkt command:", args)
 
@@ -497,4 +498,16 @@ func (r *Runtime) preparePod(pod *api.BoundPod, volumeMap map[string]volume.Inte
 		return "", false, err
 	}
 	return unitName, needReload, nil
+}
+
+// Note: In rocket, the container ID is in the form of "UUID_ImageID".
+func (r *Runtime) RunInContainer(containerID string, cmd []string) ([]byte, error) {
+	ids := strings.Split(containerID, ":")
+	if len(ids) != 2 {
+		err := fmt.Errorf("rocket: cannot parse container id: %q", containerID)
+		return nil, err
+	}
+	// TODO(yifan): https://github.com/coreos/rocket/pull/640
+	result, err := r.RunCommand("enter", "--imageid", ids[1], ids[0], cmd...)
+	return []byte(strings.Join(result, "\n")), err
 }
