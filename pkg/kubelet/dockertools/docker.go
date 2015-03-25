@@ -866,3 +866,83 @@ func GetPods(client DockerInterface, all bool) ([]*kubecontainer.Pod, error) {
 	}
 	return result, nil
 }
+
+// getPodInfraContainer tries to find the pod infra container for the given pod.
+// If found, it will return true, along with the docker container ID, hash. Otherwise
+// it will return false with other results undefined.
+func getPodInfraContainer(pod *api.Pod) (bool, string, uint64, error) {
+	containers, err := client.ListContainers(docker.ListContainersOptions{All: allContainers})
+	if err != nil {
+		return false, "", 0, err
+	}
+
+	podFullName := kubecontainer.BuildPodFullName(pod.Name, pod.Namespace)
+	for _, c := range containers {
+		dockerName, hash, err := ParseDockerName(c.Names[0])
+		if err != nil {
+			continue
+		}
+		if dockerName.PodFullName == podFullName &&
+			dockerName.PodUID == pod.UID &&
+			dockerName.ContainerName == PodInfraContainerName {
+			return true, c.ID, hash, nil
+		}
+	}
+	// Cannot find pod infra container.
+	return false, "", 0, nil
+}
+
+func restartPod(client DockerInterface, pod *api.Pod) error {
+	// Killing phase: Kill all containers belong to the pod.
+	//
+	// TODO(yifan): For now, we invokes GetPods() again. Fortunately we only need to
+	// restart the pod once in one syncPod invocation, so it's not a big performance
+	// penalty, but we might be able to refactor this later, either use cache or change
+	// the runtime interface to take the running pod as well.
+	pods, err := GetPods(client, false)
+	if err != nil {
+		return err
+	}
+	p := kubecontainer.Pods(pods).FindPodByID(pod.UID)
+	if len(p.Containers) == 0 {
+		return fmt.Errorf("cannot find the running pod for %q", kubecontainer.BuildPodFullName(pod.Name, pod.Namespace))
+	}
+
+}
+
+// TODO(yifan): A better name??
+func checkPod(pod *api.Pod) error {
+	found, id, hash, err := getPodInfraContainer(pod)
+	if err != nil {
+		return error
+	}
+	if !found {
+		glog.V(4).Infof("No pod infra container found for %q, will restart all containers", kubecontainer.BuildPodFullName(pod))
+		return restartPod(pod)
+	}
+
+	var ports []api.ContainerPort
+	// Docker only exports ports from the pod infra container.
+	// Let's collect all of the relevant ports and export them.
+	for _, container := range pod.Spec.Containers {
+		ports = append(ports, container.Ports...)
+	}
+	podInfraContainer := &api.Container{
+		Name:  dockertools.PodInfraContainerName,
+		Image: kl.podInfraContainerImage,
+		Ports: ports,
+	}
+	expectedHash := HashContainer(container)
+	if hash != expectedHash {
+		glog.V(4).Infof("Pod infra container's hash has changed, will restart all containers", kubecontainer.BuildPodFullName(pod))
+		return restartPod(pod)
+	}
+	return nil
+}
+
+// 1. If pod infra needs to be restart, restart it.
+// 2. Build container and run.
+
+func RunContainerInPod(client DockerInterface, container api.Container, pod *api.Pod, volumeMap map[string]volume.Volume) error {
+
+}
