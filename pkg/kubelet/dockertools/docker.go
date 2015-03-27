@@ -1012,7 +1012,7 @@ func RunContainer(client DockerInterface, container *api.Container, pod *api.Pod
 	if capabilities.Get().AllowPrivileged {
 		privileged = container.Privileged
 	} else if container.Privileged {
-		return "", fmt.Errorf("container requested privileged mode, but it is disallowed globally.")
+		return "", fmt.Errorf("docker: container requested privileged mode, but it is disallowed globally.")
 	}
 
 	capAdd, capDrop := makeCapabilites(container.Capabilities.Add, container.Capabilities.Drop)
@@ -1043,4 +1043,62 @@ func RunContainer(client DockerInterface, container *api.Container, pod *api.Pod
 		recorder.Eventf(ref, "started", "Started with docker id %v", dockerContainer.ID)
 	}
 	return dockerContainer.ID, nil
+}
+
+func killPod(client DockerInterface, runningPod *kubecontainer.Pod, refManager *kubecontainer.RefManager, ref *api.ObjectReference, recorder record.EventRecorder) []error {
+	var errlist []error
+	for _, c := range runningPod.Containers {
+		if err := KillContainer(client, c, runningPod, refManager, ref, recorder); err != nil {
+			errlist = append(errlist, err)
+		}
+	}
+	return errlist
+}
+
+func KillContainer(client DockerInterface, container *kubecontainer.Container) error {
+	dockerID := string(container.ID)
+	glog.V(2).Infof("Killing container with id %q", dockerID)
+	readiness.remove(ID)
+	err := kl.dockerClient.StopContainer(ID, 10)
+
+	ref, ok := refManager.GetRef(dockerID)
+	if !ok {
+		glog.Warningf("No ref for container '%v'", dockerID)
+	} else {
+		// TODO: pass reason down here, and state, or move this call up the stack.
+		recorder.Eventf(ref, "killing", "Killing %v", dockerID)
+	}
+	return err
+}
+
+func RunContainerInPod(client DockerInterface, container *api.Container, pod *api.Pod, opts *kubecontainer.RunContainerOptions,
+	refManager *kubecontainer.RefManager, ref *api.ObjectReference, recorder record.EventRecorder) (string, error) {
+
+	// TODO(yifan): Invoking GetPods() every time when we want to run a container might
+	// be inefficient. Also, should we return the new pod list? Revisit this later.
+	pods, err := GetPods()
+	if err != nil {
+		glog.Errorf("Cannot get pod list: %v", err)
+		return "", err
+	}
+
+	runningPod := kubecontainer.Pods(pods).FindPodByID(pod)
+	if needNewInfraContainer := checkPodInfraContainer(pod, runningPod); needNewInfraContainer {
+		errs := killPod(client, runningPod, refManager, ref, recorder)
+		if len(errs) > 0 {
+			glog.Errorf("Error killing pod: %v", errs)
+		}
+		// create infra container
+		if err != nil {
+			glog.Errorf("Error creating infra container: %v", err)
+			return "", err
+		}
+	}
+
+	id, err := RunContainer(client, container, pod, opts, refManager, ref, recorder)
+	if err != nil {
+		glog.Errorf("Error launching container: %v", err)
+		return "", err
+	}
+	return id, nil
 }
