@@ -33,11 +33,11 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/types"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/volume"
+	schema "github.com/appc/spec/schema"
+	appctypes "github.com/appc/spec/schema/types"
 	"github.com/coreos/go-systemd/dbus"
 	"github.com/coreos/go-systemd/unit"
-	schema "github.com/coreos/rkt/Godeps/_workspace/src/github.com/appc/spec/schema"
-	appctypes "github.com/coreos/rkt/Godeps/_workspace/src/github.com/appc/spec/schema/types" // TODO(yifan): Fix this.
-	"github.com/coreos/rkt/cas"
+	"github.com/coreos/rkt/store"
 	"github.com/golang/glog"
 )
 
@@ -58,14 +58,14 @@ const (
 const (
 	rktBinName = "rkt"
 
-	// TODO(yifan): Replace theses.
-	podStateEmbryo    = "embryo"
-	podStatePreparing = "preparing"
-	podStatePrepared  = "prepared"
-	podStateRunning   = "running"
-	podStateExited    = "exited"
-	podStateDeleting  = "deleting"
-	podStateGone      = "gone"
+	Embryo         = "embryo"
+	Preparing      = "preparing"
+	AbortedPrepare = "aborted prepare"
+	Prepared       = "prepared"
+	Running        = "running"
+	Deleting       = "deleting" // This covers pod.isExitedDeleting and pod.isDeleting.
+	Exited         = "exited"   // This covers pod.isExited and pod.isExitedGarbage.
+	Garbage        = "garbage"
 )
 
 // Runtime implements the ContainerRuntime for rkt. The implementation
@@ -141,7 +141,7 @@ func New(config *Config) (*Runtime, error) {
 // Example:
 // rkt:0.3.2+git
 // appc:0.3.0+git
-//
+//p
 func (r *Runtime) Version() (map[string]string, error) {
 	output, err := r.RunCommand("version")
 	if err != nil {
@@ -165,7 +165,7 @@ func (r *Runtime) Version() (map[string]string, error) {
 
 // GetPods runs 'systemctl list-unit' and 'rkt list' to get the list of all the appcs.
 // Then it will use the result to contruct list of pods.
-func (r *Runtime) GetPods() ([]*kubecontainer.Pod, error) {
+func (r *Runtime) GetPods(all bool) ([]*kubecontainer.Pod, error) {
 	glog.V(4).Infof("Rkt getting pods.")
 
 	units, err := r.systemd.ListUnits()
@@ -224,46 +224,29 @@ func (r *Runtime) KillPod(pod *api.Pod) error {
 
 	// TODO(yifan): More graceful stop. Replace with StopUnit and wait for a timeout.
 	r.systemd.KillUnit(serviceName, int32(syscall.SIGKILL))
-	return nil
+	return r.systemd.Reload()
 }
 
-// RunContainerInPod launches a container in the given pod.
-// For now, we need to kill and restart the whole pod. Hopefully we will be
-// launching this single container without touching its siblings in the near future.
-func (r *Runtime) RunContainerInPod(container api.Container, pod *api.Pod, volumeMap map[string]volume.Volume) error {
+func (r *Runtime) RestartPod(pod *api.Pod, volumeMap map[string]volume.Volume) error {
 	if err := r.KillPod(pod); err != nil {
 		return err
 	}
-
-	// Update the pod and start it.
-	pod.Spec.Containers = append(pod.Spec.Containers, container)
-	if err := r.RunPod(pod, volumeMap); err != nil {
-		return err
-	}
-	return nil
+	return r.RunPod(pod, volumeMap)
 }
 
-// KillContainer kills the container in the given pod.
-// Like RunContainerInPod, we will have to tear down the whole pod first to kill this
-// single container.
-func (r *Runtime) KillContainerInPod(container api.Container, pod *api.Pod) error {
-	if err := r.KillPod(pod); err != nil {
-		return err
+// GetPodStatus currently invokes GetPods() to return the status. TODO(yifan): This is a hack,
+// should try to split the status and the pod list.
+func (r *Runtime) GetPodStatus(pod *api.Pod) (*api.PodStatus, error) {
+	pods, err := r.GetPods(true)
+	if err != nil {
+		return nil, err
 	}
-
-	// Update the pod and start it.
-	var containers []api.Container
-	for _, c := range pod.Spec.Containers {
-		if c.Name == container.Name {
-			continue
-		}
-		containers = append(containers, c)
+	p := kubecontainer.Pods(pods).FindPodByID(pod.UID)
+	// TODO(yifan): Refactor this, use nil.
+	if len(p.Containers) == 0 {
+		return nil, fmt.Errorf("cannot find status for pod: %q", kubecontainer.BuildPodFullName(pod.Name, pod.Namespace))
 	}
-	pod.Spec.Containers = containers
-	// TODO(yifan): Bug here, since we cannot get the volume map, after killing the mount
-	// path will disappear. This could be fixed if we support killing single container without
-	// tearing down the whole pod.
-	return r.RunPod(pod, nil)
+	return &p.Status, nil
 }
 
 // RunCommand invokes rkt binary with arguments and returns the result
@@ -311,16 +294,16 @@ func (p *podInfo) getContainerStatus(container *kubecontainer.Container) api.Con
 	status.Name = container.Name
 	status.Image = container.Image
 	switch p.state {
-	case podStateRunning:
+	case Running:
 		// TODO(yifan): Get StartedAt.
 		status.State = api.ContainerState{
 			Running: &api.ContainerStateRunning{
 				StartedAt: util.Unix(container.Created, 0),
 			},
 		}
-	case podStateEmbryo, podStatePreparing, podStatePrepared:
+	case Embryo, Preparing, Prepared:
 		status.State = api.ContainerState{Waiting: &api.ContainerStateWaiting{}}
-	case podStateExited, podStateDeleting, podStateGone:
+	case AbortedPrepare, Deleting, Exited, Garbage:
 		status.State = api.ContainerState{
 			Termination: &api.ContainerStateTerminated{
 				StartedAt: util.Unix(container.Created, 0),
@@ -538,7 +521,7 @@ func makePodManifest(pod *api.Pod, volumeMap map[string]volume.Volume) (*schema.
 	//
 	// https://github.com/coreos/rkt/issues/723.
 	//
-	ds, err := cas.NewStore(defaultDataDir)
+	ds, err := store.NewStore(defaultDataDir)
 	if err != nil {
 		glog.Errorf("Cannot open store: %v", err)
 		return nil, err
@@ -688,7 +671,7 @@ func (r *Runtime) preparePod(pod *api.Pod, volumeMap map[string]volume.Volume) (
 		return "", false, err
 	}
 
-	runPrepared := fmt.Sprintf("%s run-prepared --private-net --spawn-metadata-svc %s", r.absPath, uuid)
+	runPrepared := fmt.Sprintf("%s run-prepared --private-net=true %s", r.absPath, uuid)
 	units := []*unit.UnitOption{
 		newUnitOption(unitKubernetesSection, unitRktID, uuid),
 		newUnitOption(unitKubernetesSection, unitPodName, string(b)),
@@ -748,3 +731,70 @@ func HashContainer(container *api.Container) uint64 {
 	util.DeepHashObject(hash, *container)
 	return uint64(hash.Sum32())
 }
+
+//func ExecInContainer(containerID string, cmd []string, in io.Reader, out, err io.WriteCloser, tty bool) error {
+//	nsenter, err := exec.LookPath("nsenter")
+//	if err != nil {
+//		return fmt.Errorf("exec unavailable - unable to locate nsenter")
+//	}
+//
+//	container, err := d.client.InspectContainer(containerId)
+//	if err != nil {
+//		return err
+//	}
+//
+//	if !container.State.Running {
+//		return fmt.Errorf("container not running (%s)", container)
+//	}
+//
+//	containerPid := container.State.Pid
+//
+//	// TODO what if the container doesn't have `env`???
+//	args := []string{"-t", fmt.Sprintf("%d", containerPid), "-m", "-i", "-u", "-n", "-p", "--", "env", "-i"}
+//	//args = append(args, fmt.Sprintf("HOSTNAME=%s", container.Config.Hostname))
+//	//args = append(args, container.Config.Env...)
+//	args = append(args, cmd...)
+//	command := exec.Command(nsenter, args...)
+//	if tty {
+//		p, err := StartPty(command)
+//		if err != nil {
+//			return err
+//		}
+//		defer p.Close()
+//
+//		// make sure to close the stdout stream
+//		defer stdout.Close()
+//
+//		if stdin != nil {
+//			go io.Copy(p, stdin)
+//		}
+//
+//		if stdout != nil {
+//			go io.Copy(stdout, p)
+//		}
+//
+//		return command.Wait()
+//	} else {
+//		if stdin != nil {
+//			// Use an os.Pipe here as it returns true *os.File objects.
+//			// This way, if you run 'kubectl exec -p <pod> -i bash' (no tty) and type 'exit',
+//			// the call below to command.Run() can unblock because its Stdin is the read half
+//			// of the pipe.
+//			r, w, err := os.Pipe()
+//			if err != nil {
+//				return err
+//			}
+//			go io.Copy(w, stdin)
+//
+//			command.Stdin = r
+//		}
+//		if stdout != nil {
+//			command.Stdout = stdout
+//		}
+//		if stderr != nil {
+//			command.Stderr = stderr
+//		}
+//
+//		return command.Run()
+//	}
+//}

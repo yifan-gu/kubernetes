@@ -301,6 +301,8 @@ func (s *Server) handlePodInfoVersioned(w http.ResponseWriter, req *http.Request
 
 // handlePodStatus handles podInfo requests against the Kubelet
 func (s *Server) handlePodStatus(w http.ResponseWriter, req *http.Request, versioned bool) {
+	fmt.Println("wocao!!!!!!!!!!!!!!!!!!!!!!!!!!!1")
+
 	u, err := url.ParseRequestURI(req.RequestURI)
 	if err != nil {
 		s.error(w, err)

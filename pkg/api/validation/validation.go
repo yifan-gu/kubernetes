@@ -862,9 +862,10 @@ func ValidatePodUpdate(newPod, oldPod *api.Pod) errs.ValidationErrorList {
 		newContainers = append(newContainers, container)
 	}
 	pod.Spec.Containers = newContainers
-	if !api.Semantic.DeepEqual(pod.Spec, oldPod.Spec) {
-		allErrs = append(allErrs, errs.NewFieldInvalid("spec", newPod.Spec, "may not update fields other than container.image"))
-	}
+
+	//if !api.Semantic.DeepEqual(pod.Spec, oldPod.Spec) {
+	//	allErrs = append(allErrs, errs.NewFieldInvalid("spec", newPod.Spec, "may not update fields other than container.image"))
+	//}
 
 	newPod.Status = oldPod.Status
 	return allErrs

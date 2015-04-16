@@ -1,0 +1,13 @@
+apiVersion: v1beta3
+kind: Pod
+metadata:
+  labels:
+    name: foo
+  name: coreos
+spec:
+  containers:
+    - name: nginx
+      image: docker://nginx
+    - name: etcd
+      image: coreos.com/etcd:v2.0.8
+  restartPolicy: Never
