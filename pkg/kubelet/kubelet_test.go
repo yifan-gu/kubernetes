@@ -328,7 +328,7 @@ func apiContainerToContainer(c docker.APIContainers) container.Container {
 		return container.Container{}
 	}
 	return container.Container{
-		ID:   types.UID(c.ID),
+		ID:   dockertools.DockerPrefix + c.ID,
 		Name: dockerName.ContainerName,
 		Hash: hash,
 	}
@@ -342,7 +342,7 @@ func dockerContainersToPod(containers dockertools.DockerContainers) container.Po
 			continue
 		}
 		pod.Containers = append(pod.Containers, &container.Container{
-			ID:    types.UID(c.ID),
+			ID:    dockertools.DockerPrefix + c.ID,
 			Name:  dockerName.ContainerName,
 			Hash:  hash,
 			Image: c.Image,
@@ -374,7 +374,7 @@ func TestKillContainerWithError(t *testing.T) {
 	testKubelet := newTestKubelet(t)
 	kubelet := testKubelet.kubelet
 	for _, c := range fakeDocker.ContainerList {
-		kubelet.readinessManager.SetReadiness(c.ID, true)
+		kubelet.readinessManager.SetReadiness(dockertools.DockerPrefix+c.ID, true)
 	}
 	kubelet.dockerClient = fakeDocker
 	c := apiContainerToContainer(fakeDocker.ContainerList[0])
@@ -386,13 +386,13 @@ func TestKillContainerWithError(t *testing.T) {
 	verifyCalls(t, fakeDocker, []string{"stop"})
 	killedContainer := containers[0]
 	liveContainer := containers[1]
-	ready := kubelet.readinessManager.GetReadiness(killedContainer.ID)
+	ready := kubelet.readinessManager.GetReadiness(dockertools.DockerPrefix + killedContainer.ID)
 	if ready {
-		t.Errorf("exepcted container entry ID '%v' to not be found. states: %+v", killedContainer.ID, ready)
+		t.Errorf("expected container entry ID '%v' to not be found. states: %+v", killedContainer.ID, ready)
 	}
-	ready = kubelet.readinessManager.GetReadiness(liveContainer.ID)
+	ready = kubelet.readinessManager.GetReadiness(dockertools.DockerPrefix + liveContainer.ID)
 	if !ready {
-		t.Errorf("exepcted container entry ID '%v' to be found. states: %+v", liveContainer.ID, ready)
+		t.Errorf("expected container entry ID '%v' to be found. states: %+v", liveContainer.ID, ready)
 	}
 }
 
@@ -415,7 +415,7 @@ func TestKillContainer(t *testing.T) {
 		Name: "foobar",
 	}
 	for _, c := range fakeDocker.ContainerList {
-		kubelet.readinessManager.SetReadiness(c.ID, true)
+		kubelet.readinessManager.SetReadiness(dockertools.DockerPrefix+c.ID, true)
 	}
 
 	c := apiContainerToContainer(fakeDocker.ContainerList[0])
@@ -426,13 +426,13 @@ func TestKillContainer(t *testing.T) {
 	verifyCalls(t, fakeDocker, []string{"stop"})
 	killedContainer := containers[0]
 	liveContainer := containers[1]
-	ready := kubelet.readinessManager.GetReadiness(killedContainer.ID)
+	ready := kubelet.readinessManager.GetReadiness(dockertools.DockerPrefix + killedContainer.ID)
 	if ready {
-		t.Errorf("exepcted container entry ID '%v' to not be found. states: %+v", killedContainer.ID, ready)
+		t.Errorf("expected container entry ID '%v' to not be found. states: %+v", killedContainer.ID, ready)
 	}
-	ready = kubelet.readinessManager.GetReadiness(liveContainer.ID)
+	ready = kubelet.readinessManager.GetReadiness(dockertools.DockerPrefix + liveContainer.ID)
 	if !ready {
-		t.Errorf("exepcted container entry ID '%v' to be found. states: %+v", liveContainer.ID, ready)
+		t.Errorf("expected container entry ID '%v' to be found. states: %+v", liveContainer.ID, ready)
 	}
 }
 
@@ -1593,13 +1593,13 @@ type fakeContainerCommandRunner struct {
 
 func (f *fakeContainerCommandRunner) RunInContainer(id string, cmd []string) ([]byte, error) {
 	f.Cmd = cmd
-	f.ID = id
+	f.ID = strings.TrimPrefix(id, dockertools.DockerPrefix)
 	return []byte{}, f.E
 }
 
 func (f *fakeContainerCommandRunner) ExecInContainer(id string, cmd []string, in io.Reader, out, err io.WriteCloser, tty bool) error {
 	f.Cmd = cmd
-	f.ID = id
+	f.ID = strings.TrimPrefix(id, dockertools.DockerPrefix)
 	f.Stdin = in
 	f.Stdout = out
 	f.Stderr = err
@@ -1612,7 +1612,7 @@ func (f *fakeContainerCommandRunner) PortForward(pod *kubecontainer.Pod, port ui
 	if podInfraContainer == nil {
 		return fmt.Errorf("cannot find pod infra container in pod %q", kubecontainer.BuildPodFullName(pod.Name, pod.Namespace))
 	}
-	f.ID = string(podInfraContainer.ID)
+	f.ID = strings.TrimPrefix(podInfraContainer.ID, dockertools.DockerPrefix)
 	f.Port = port
 	f.Stream = stream
 	return nil

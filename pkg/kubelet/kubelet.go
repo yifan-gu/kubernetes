@@ -817,13 +817,13 @@ func parseResolvConf(reader io.Reader) (nameservers []string, searches []string,
 
 // Kill a docker container
 func (kl *Kubelet) killContainer(c *kubecontainer.Container) error {
-	return kl.killContainerByID(string(c.ID))
+	return kl.killContainerByID(c.ID)
 }
 
 func (kl *Kubelet) killContainerByID(ID string) error {
 	glog.V(2).Infof("Killing container with id %q", ID)
 	kl.readinessManager.RemoveReadiness(ID)
-	err := kl.dockerClient.StopContainer(ID, 10)
+	err := kl.dockerClient.StopContainer(strings.TrimPrefix(ID, "docker://"), 10)
 
 	ref, ok := kl.containerRefManager.GetRef(ID)
 	if !ok {
@@ -985,8 +985,7 @@ func shouldContainerBeRestarted(container *api.Container, pod *api.Pod, podStatu
 
 	// Set dead containers to unready state.
 	for _, c := range resultStatus {
-		// TODO(yifan): Unify the format of container ID. (i.e. including docker:// as prefix).
-		readinessManager.RemoveReadiness(strings.TrimPrefix(c.ContainerID, dockertools.DockerPrefix))
+		readinessManager.RemoveReadiness(c.ContainerID)
 	}
 
 	// Check RestartPolicy for dead container.
@@ -2038,7 +2037,7 @@ func (kl *Kubelet) RunInContainer(podFullName string, podUID types.UID, containe
 	if container == nil {
 		return nil, fmt.Errorf("container not found (%q)", containerName)
 	}
-	return kl.runner.RunInContainer(string(container.ID), cmd)
+	return kl.runner.RunInContainer(container.ID, cmd)
 }
 
 // ExecInContainer executes a command in a container, connecting the supplied
@@ -2056,7 +2055,7 @@ func (kl *Kubelet) ExecInContainer(podFullName string, podUID types.UID, contain
 	if container == nil {
 		return fmt.Errorf("container not found (%q)", containerName)
 	}
-	return kl.runner.ExecInContainer(string(container.ID), cmd, stdin, stdout, stderr, tty)
+	return kl.runner.ExecInContainer(container.ID, cmd, stdin, stdout, stderr, tty)
 }
 
 // PortForward connects to the pod's port and copies data between the port

@@ -91,8 +91,9 @@ type Pod struct {
 // status of the container.
 type Container struct {
 	// The ID of the container, used by the container runtime to identify
-	// a container.
-	ID types.UID
+	// a container. It is in the format '<runtime>://<container_id>', where
+	// <runtime> can be 'rkt', 'docker', etc.
+	ID string
 	// The name of the container, which should be the same as specified by
 	// api.Container.
 	Name string

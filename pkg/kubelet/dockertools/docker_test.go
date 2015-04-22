@@ -549,12 +549,12 @@ func TestFindContainersByPod(t *testing.T) {
 					Namespace: "ns",
 					Containers: []*kubecontainer.Container{
 						{
-							ID:   "foobar",
+							ID:   "docker://foobar",
 							Name: "foobar",
 							Hash: 0x1234,
 						},
 						{
-							ID:   "baz",
+							ID:   "docker://baz",
 							Name: "baz",
 							Hash: 0x1234,
 						},
@@ -566,7 +566,7 @@ func TestFindContainersByPod(t *testing.T) {
 					Namespace: "ns",
 					Containers: []*kubecontainer.Container{
 						{
-							ID:   "barbar",
+							ID:   "docker://barbar",
 							Name: "barbar",
 							Hash: 0x1234,
 						},
@@ -607,17 +607,17 @@ func TestFindContainersByPod(t *testing.T) {
 					Namespace: "ns",
 					Containers: []*kubecontainer.Container{
 						{
-							ID:   "foobar",
+							ID:   "docker://foobar",
 							Name: "foobar",
 							Hash: 0x1234,
 						},
 						{
-							ID:   "barfoo",
+							ID:   "docker://barfoo",
 							Name: "barfoo",
 							Hash: 0x1234,
 						},
 						{
-							ID:   "baz",
+							ID:   "docker://baz",
 							Name: "baz",
 							Hash: 0x1234,
 						},
@@ -629,7 +629,7 @@ func TestFindContainersByPod(t *testing.T) {
 					Namespace: "ns",
 					Containers: []*kubecontainer.Container{
 						{
-							ID:   "barbar",
+							ID:   "docker://barbar",
 							Name: "barbar",
 							Hash: 0x1234,
 						},
@@ -641,7 +641,7 @@ func TestFindContainersByPod(t *testing.T) {
 					Namespace: "ns",
 					Containers: []*kubecontainer.Container{
 						{
-							ID:   "bazbaz",
+							ID:   "docker://bazbaz",
 							Name: "bazbaz",
 							Hash: 0x1234,
 						},

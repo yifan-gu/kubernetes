@@ -159,9 +159,9 @@ func (d *dockerContainerCommandRunner) runInContainerUsingNsinit(containerID str
 	return c.CombinedOutput()
 }
 
-// RunInContainer uses nsinit to run the command inside the container identified by containerID
-// TODO(yifan): Use strong type for containerID.
+// RunInContainer uses nsinit to run the command inside the container identified by containerID.
 func (d *dockerContainerCommandRunner) RunInContainer(containerID string, cmd []string) ([]byte, error) {
+	containerID = strings.TrimPrefix(DockerPrefix, containerID)
 	// If native exec support does not exist in the local docker daemon use nsinit.
 	useNativeExec, err := d.nativeExecSupportExists()
 	if err != nil {
@@ -205,14 +205,14 @@ func (d *dockerContainerCommandRunner) RunInContainer(containerID string, cmd []
 //  - match cgroups of container
 //  - should we support `docker exec`?
 //  - should we support nsenter in a container, running with elevated privs and --pid=host?
-//  - use strong type for containerId
-func (d *dockerContainerCommandRunner) ExecInContainer(containerId string, cmd []string, stdin io.Reader, stdout, stderr io.WriteCloser, tty bool) error {
+func (d *dockerContainerCommandRunner) ExecInContainer(containerID string, cmd []string, stdin io.Reader, stdout, stderr io.WriteCloser, tty bool) error {
+	containerID = strings.TrimPrefix(DockerPrefix, containerID)
 	nsenter, err := exec.LookPath("nsenter")
 	if err != nil {
 		return fmt.Errorf("exec unavailable - unable to locate nsenter")
 	}
 
-	container, err := d.client.InspectContainer(containerId)
+	container, err := d.client.InspectContainer(containerID)
 	if err != nil {
 		return err
 	}
@@ -286,7 +286,7 @@ func (d *dockerContainerCommandRunner) PortForward(pod *kubecontainer.Pod, port 
 	if podInfraContainer == nil {
 		return fmt.Errorf("cannot find pod infra container in pod %q", kubecontainer.BuildPodFullName(pod.Name, pod.Namespace))
 	}
-	container, err := d.client.InspectContainer(string(podInfraContainer.ID))
+	container, err := d.client.InspectContainer(strings.TrimPrefix(podInfraContainer.ID, DockerPrefix))
 	if err != nil {
 		return err
 	}
@@ -482,6 +482,7 @@ func ConnectToDockerOrDie(dockerEndpoint string) DockerInterface {
 }
 
 // TODO(yifan): Move this to container.Runtime.
+// Note: The containerID here includes the '<runtime>' schema as the prefix, e.g. 'docker://<containerID>'.
 type ContainerCommandRunner interface {
 	RunInContainer(containerID string, cmd []string) ([]byte, error)
 	ExecInContainer(containerID string, cmd []string, in io.Reader, out, err io.WriteCloser, tty bool) error

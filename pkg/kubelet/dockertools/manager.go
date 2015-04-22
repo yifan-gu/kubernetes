@@ -602,7 +602,7 @@ func (dm *DockerManager) GetPods(all bool) ([]*kubecontainer.Pod, error) {
 			pods[dockerName.PodUID] = pod
 		}
 		pod.Containers = append(pod.Containers, &kubecontainer.Container{
-			ID:      types.UID(c.ID),
+			ID:      DockerPrefix + c.ID,
 			Name:    dockerName.ContainerName,
 			Hash:    hash,
 			Created: c.Created,
@@ -629,7 +629,7 @@ func (dm *DockerManager) PodInfraContainerChanged(pod *api.Pod, podInfraContaine
 	networkMode := ""
 	var ports []api.ContainerPort
 
-	dockerPodInfraContainer, err := dm.client.InspectContainer(string(podInfraContainer.ID))
+	dockerPodInfraContainer, err := dm.client.InspectContainer(strings.TrimPrefix(podInfraContainer.ID, DockerPrefix))
 	if err != nil {
 		return false, err
 	}
