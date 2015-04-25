@@ -39,6 +39,7 @@ import (
 	"github.com/coreos/go-systemd/unit"
 	"github.com/coreos/rkt/store"
 	"github.com/golang/glog"
+	"github.com/kr/pty"
 )
 
 const (
@@ -202,6 +203,8 @@ func (r *Runtime) RunPod(pod *api.Pod, volumeMap map[string]volume.Volume) error
 		return err
 	}
 	if needReload {
+		// TODO(yifan): More graceful stop. Replace with StopUnit and wait for a timeout.
+		r.systemd.KillUnit(name, int32(syscall.SIGKILL))
 		if err := r.systemd.Reload(); err != nil {
 			return err
 		}
@@ -249,17 +252,20 @@ func (r *Runtime) GetPodStatus(pod *api.Pod) (*api.PodStatus, error) {
 	return &p.Status, nil
 }
 
+func (r *Runtime) buildCommand(args ...string) *exec.Cmd {
+	cmd := exec.Command(rktBinName)
+	cmd.Args = append(cmd.Args, r.config.buildGlobalOptions()...)
+	cmd.Args = append(cmd.Args, args...)
+	return cmd
+}
+
 // RunCommand invokes rkt binary with arguments and returns the result
 // from stdout in a list of strings.
 // TODO(yifan): Do not export this.
 func (r *Runtime) RunCommand(args ...string) ([]string, error) {
 	glog.V(4).Info("Run rkt command:", args)
 
-	cmd := exec.Command(rktBinName)
-	cmd.Args = append(cmd.Args, r.config.buildGlobalOptions()...)
-	cmd.Args = append(cmd.Args, args...)
-
-	output, err := cmd.Output()
+	output, err := r.buildCommand(args...).Output()
 	if err != nil {
 		return nil, err
 	}
@@ -593,7 +599,20 @@ func makePodManifest(pod *api.Pod, volumeMap map[string]volume.Volume) (*schema.
 	return manifest, nil
 }
 
-func apiPodToRuntimePod(uuid string, pod *api.Pod) *kubecontainer.Pod {
+func (r *Runtime) getImageID(imageName string) (string, error) {
+	output, err := r.RunCommand("fetch", imageName)
+	if err != nil {
+		return "", err
+	}
+	last := output[len(output)-1]
+	if !strings.HasPrefix(last, "sha512-") {
+		return "", fmt.Errorf("unexpected result: %q", last)
+	}
+	return last, err
+}
+
+// TODO(yifan): Remove the receiver once we can solve the appName->imageID problem.
+func (r *Runtime) apiPodToRuntimePod(uuid string, pod *api.Pod) *kubecontainer.Pod {
 	p := &kubecontainer.Pod{
 		ID:        pod.UID,
 		Name:      pod.Name,
@@ -601,8 +620,12 @@ func apiPodToRuntimePod(uuid string, pod *api.Pod) *kubecontainer.Pod {
 	}
 	for i := range pod.Spec.Containers {
 		c := &pod.Spec.Containers[i]
+		imageID, err := r.getImageID(c.Image)
+		if err != nil {
+			glog.Warningf("rkt: Cannot get image id: %v", err)
+		}
 		p.Containers = append(p.Containers, &kubecontainer.Container{
-			ID:      buildContainerID(&containerID{uuid, c.Name}),
+			ID:      buildContainerID(&containerID{uuid, c.Name, imageID}),
 			Name:    c.Name,
 			Image:   c.Image,
 			Hash:    HashContainer(c),
@@ -615,25 +638,27 @@ func apiPodToRuntimePod(uuid string, pod *api.Pod) *kubecontainer.Pod {
 type containerID struct {
 	uuid    string // uuid of the pod.
 	appName string // name of the app in that pod.
+	imageID string // id of the image. TODO(yifan): Depreciate this.
 }
 
 // buildContainerID constructs the containers's ID using containerID,
 // which containers the pod uuid and the container name.
 // The result can be used to globally identify a container.
 func buildContainerID(c *containerID) types.UID {
-	return types.UID(fmt.Sprintf("%s:%s", c.uuid, c.appName))
+	return types.UID(fmt.Sprintf("%s:%s:%s", c.uuid, c.appName, c.imageID))
 }
 
 // parseContainerID parses the containerID into pod uuid and the container name. The
 // results can be used to get more information of the container.
-func parseContainerID(id types.UID) (*containerID, error) {
-	tuples := strings.Split(string(id), ":")
-	if len(tuples) != 2 {
+func parseContainerID(id string) (*containerID, error) {
+	tuples := strings.Split(id, ":")
+	if len(tuples) != 3 {
 		return nil, fmt.Errorf("rkt: cannot parse container ID for: %v", id)
 	}
 	return &containerID{
 		uuid:    tuples[0],
 		appName: tuples[1],
+		imageID: tuples[2],
 	}, nil
 }
 
@@ -664,7 +689,7 @@ func (r *Runtime) preparePod(pod *api.Pod, volumeMap map[string]volume.Volume) (
 	uuid := output[0]
 	glog.V(4).Infof("'rkt prepare' returns %q.", uuid)
 
-	p := apiPodToRuntimePod(uuid, pod)
+	p := r.apiPodToRuntimePod(uuid, pod)
 	b, err := json.Marshal(p)
 	if err != nil {
 		glog.Errorf("rkt: cannot marshal pod `%s_%s`: %v", p.Name, p.Namespace, err)
@@ -698,20 +723,6 @@ func (r *Runtime) preparePod(pod *api.Pod, volumeMap map[string]volume.Volume) (
 	return unitName, needReload, nil
 }
 
-// Note: In rkt, the container ID is in the form of "UUID_ImageID".
-func (r *Runtime) RunInContainer(containerID string, cmd []string) ([]byte, error) {
-	id, err := parseContainerID(types.UID(containerID))
-	if err != nil {
-		return nil, err
-	}
-	// TODO(yifan): Currently, store image ID in appName.
-	// This will change in the future, see https://github.com/coreos/rkt/pull/640
-	args := append([]string{}, "enter", "--imageid", id.appName, id.uuid)
-	args = append(args, cmd...)
-	result, err := r.RunCommand(args...)
-	return []byte(strings.Join(result, "\n")), err
-}
-
 // PullImage invokes 'rkt fetch' to download an aci.
 func (r *Runtime) PullImage(img string) error {
 	_, err := r.RunCommand("fetch", img)
@@ -732,69 +743,76 @@ func HashContainer(container *api.Container) uint64 {
 	return uint64(hash.Sum32())
 }
 
-//func ExecInContainer(containerID string, cmd []string, in io.Reader, out, err io.WriteCloser, tty bool) error {
-//	nsenter, err := exec.LookPath("nsenter")
-//	if err != nil {
-//		return fmt.Errorf("exec unavailable - unable to locate nsenter")
-//	}
-//
-//	container, err := d.client.InspectContainer(containerId)
-//	if err != nil {
-//		return err
-//	}
-//
-//	if !container.State.Running {
-//		return fmt.Errorf("container not running (%s)", container)
-//	}
-//
-//	containerPid := container.State.Pid
-//
-//	// TODO what if the container doesn't have `env`???
-//	args := []string{"-t", fmt.Sprintf("%d", containerPid), "-m", "-i", "-u", "-n", "-p", "--", "env", "-i"}
-//	//args = append(args, fmt.Sprintf("HOSTNAME=%s", container.Config.Hostname))
-//	//args = append(args, container.Config.Env...)
-//	args = append(args, cmd...)
-//	command := exec.Command(nsenter, args...)
-//	if tty {
-//		p, err := StartPty(command)
-//		if err != nil {
-//			return err
-//		}
-//		defer p.Close()
-//
-//		// make sure to close the stdout stream
-//		defer stdout.Close()
-//
-//		if stdin != nil {
-//			go io.Copy(p, stdin)
-//		}
-//
-//		if stdout != nil {
-//			go io.Copy(stdout, p)
-//		}
-//
-//		return command.Wait()
-//	} else {
-//		if stdin != nil {
-//			// Use an os.Pipe here as it returns true *os.File objects.
-//			// This way, if you run 'kubectl exec -p <pod> -i bash' (no tty) and type 'exit',
-//			// the call below to command.Run() can unblock because its Stdin is the read half
-//			// of the pipe.
-//			r, w, err := os.Pipe()
-//			if err != nil {
-//				return err
-//			}
-//			go io.Copy(w, stdin)
-//
-//			command.Stdin = r
-//		}
-//		if stdout != nil {
-//			command.Stdout = stdout
-//		}
-//		if stderr != nil {
-//			command.Stderr = stderr
-//		}
-//
-//		return command.Run()
-//	}
-//}
+// Note: In rkt, the container ID is in the form of "UUID:appName:ImageID", where
+// appName is the container name.
+func (r *Runtime) RunInContainer(containerID string, cmd []string) ([]byte, error) {
+	id, err := parseContainerID(containerID)
+	if err != nil {
+		return nil, err
+	}
+	// TODO(yifan): Use appName instead of imageID.
+	// see https://github.com/coreos/rkt/pull/640
+	args := append([]string{}, "enter", "--imageid", id.imageID, id.uuid)
+	args = append(args, cmd...)
+
+	result, err := r.RunCommand(args...)
+	return []byte(strings.Join(result, "\n")), err
+}
+
+// Pty unsupported yet.
+func startPty(c *exec.Cmd) (*os.File, error) {
+	return pty.Start(c)
+}
+
+// Note: In rkt, the container ID is in the form of "UUID:appName:ImageID", where
+// appName is the container name.
+func (r *Runtime) ExecInContainer(containerID string, cmd []string, stdin io.Reader, stdout, stderr io.WriteCloser, tty bool) error {
+	id, err := parseContainerID(containerID)
+	if err != nil {
+		return err
+	}
+	// TODO(yifan): Use appName instead of imageID.
+	// see https://github.com/coreos/rkt/pull/640
+	args := append([]string{}, "enter", "--imageid", id.imageID, id.uuid)
+	args = append(args, cmd...)
+	command := r.buildCommand(args...)
+
+	if tty {
+		p, err := startPty(command)
+		if err != nil {
+			return err
+		}
+		defer p.Close()
+
+		// make sure to close the stdout stream
+		defer stdout.Close()
+
+		if stdin != nil {
+			go io.Copy(p, stdin)
+		}
+		if stdout != nil {
+			go io.Copy(stdout, p)
+		}
+		return command.Wait()
+	}
+	if stdin != nil {
+		// Use an os.Pipe here as it returns true *os.File objects.
+		// This way, if you run 'kubectl exec -p <pod> -i bash' (no tty) and type 'exit',
+		// the call below to command.Run() can unblock because its Stdin is the read half
+		// of the pipe.
+		r, w, err := os.Pipe()
+		if err != nil {
+			return err
+		}
+		go io.Copy(w, stdin)
+
+		command.Stdin = r
+	}
+	if stdout != nil {
+		command.Stdout = stdout
+	}
+	if stderr != nil {
+		command.Stderr = stderr
+	}
+	return command.Run()
+}

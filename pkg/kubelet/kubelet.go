@@ -1973,7 +1973,7 @@ func (kl *Kubelet) ServeLogs(w http.ResponseWriter, req *http.Request) {
 // It returns nil if not found.
 // TODO(yifan): Move this to runtime once the runtime interface has been all implemented.
 func (kl *Kubelet) findContainer(podFullName string, podUID types.UID, containerName string) (*kubecontainer.Container, error) {
-	pods, err := kl.containerManager.GetPods(false)
+	pods, err := kl.rktRuntime.GetPods(false)
 	if err != nil {
 		return nil, err
 	}
@@ -2013,7 +2013,7 @@ func (kl *Kubelet) ExecInContainer(podFullName string, podUID types.UID, contain
 	if container == nil {
 		return fmt.Errorf("container not found (%q)", containerName)
 	}
-	return kl.runner.ExecInContainer(string(container.ID), cmd, stdin, stdout, stderr, tty)
+	return kl.rktRuntime.ExecInContainer(string(container.ID), cmd, stdin, stdout, stderr, tty)
 }
 
 // PortForward connects to the pod's port and copies data between the port
