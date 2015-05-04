@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path"
 	"strings"
 
@@ -151,38 +150,39 @@ func (r *Runtime) findRktID(pod *kubecontainer.Pod) (string, error) {
 //
 // TODO(yifan): Merge with the same function in dockertools.
 func (r *Runtime) PortForward(pod *kubecontainer.Pod, port uint16, stream io.ReadWriteCloser) error {
-	glog.V(4).Infof("Rkt port forwarding in container.")
-
-	podInfos, err := r.getPodInfos()
-	if err != nil {
-		return err
-	}
-
-	rktID, err := r.findRktID(pod)
-	if err != nil {
-		return err
-	}
-
-	info, ok := podInfos[rktID]
-	if !ok {
-		return fmt.Errorf("cannot find the pod info for pod %v", pod)
-	}
-	if info.pid < 0 {
-		return fmt.Errorf("cannot get the pid for pod %v", pod)
-	}
-
-	_, lookupErr := exec.LookPath("socat")
-	if lookupErr != nil {
-		return fmt.Errorf("unable to do port forwarding: socat not found.")
-	}
-	args := []string{"-t", fmt.Sprintf("%d", info.pid), "-n", "socat", "-", fmt.Sprintf("TCP4:localhost:%d", port)}
-
-	_, lookupErr = exec.LookPath("nsenter")
-	if lookupErr != nil {
-		return fmt.Errorf("unable to do port forwarding: nsenter not found.")
-	}
-	command := exec.Command("nsenter", args...)
-	command.Stdin = stream
-	command.Stdout = stream
-	return command.Run()
+	return fmt.Errorf("not implemented")
+	//glog.V(4).Infof("Rkt port forwarding in container.")
+	//
+	//podInfos, err := r.getPodInfos()
+	//if err != nil {
+	//	return err
+	//}
+	//
+	//rktID, err := r.findRktID(pod)
+	//if err != nil {
+	//	return err
+	//}
+	//
+	//info, ok := podInfos[rktID]
+	//if !ok {
+	//	return fmt.Errorf("cannot find the pod info for pod %v", pod)
+	//}
+	////if info.pid < 0 {
+	//return fmt.Errorf("cannot get the pid for pod %v", pod)
+	////}
+	//
+	//_, lookupErr := exec.LookPath("socat")
+	//if lookupErr != nil {
+	//	return fmt.Errorf("unable to do port forwarding: socat not found.")
+	//}
+	//args := []string{"-t", fmt.Sprintf("%d", info.pid), "-n", "socat", "-", fmt.Sprintf("TCP4:localhost:%d", port)}
+	//
+	//_, lookupErr = exec.LookPath("nsenter")
+	//if lookupErr != nil {
+	//	return fmt.Errorf("unable to do port forwarding: nsenter not found.")
+	//}
+	//command := exec.Command("nsenter", args...)
+	//command.Stdin = stream
+	//command.Stdout = stream
+	//return command.Run()
 }

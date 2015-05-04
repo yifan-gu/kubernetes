@@ -17,8 +17,6 @@ limitations under the License.
 package rkt
 
 import (
-	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
@@ -40,85 +38,33 @@ const (
 	Garbage        = "garbage"
 )
 
-// podInfo is the internal type that represents the state of
-// the rkt pod.
 type podInfo struct {
-	// The state of the pod, e.g. Embryo, Preparing.
-	state string
-	// The ip of the pod. IPv4 for now.
-	ip string
-	// The pid of the init process in the pod.
-	pid int
-	// A map from image hashes to exit codes.
-	// TODO(yifan): Should be appName to exit code in the future.
-	exitCodes map[string]int
+	state       string
+	networkInfo string
 }
 
-// parsePodInfo parses the result of 'rkt status' into podInfo.
-func parsePodInfo(status []string) (*podInfo, error) {
-	p := &podInfo{
-		pid:       -1,
-		exitCodes: make(map[string]int),
-	}
-
-	for _, line := range status {
-		tuples := strings.SplitN(line, "=", 2)
-		if len(tuples) != 2 {
-			return nil, fmt.Errorf("invalid status line: %q", line)
-		}
-		switch tuples[0] {
-		case "state":
-			// TODO(yifan): Parse the status here. This requires more details in
-			// the rkt status, (e.g. started time, image name, etc).
-			p.state = tuples[1]
-		case "networks":
-			p.ip = getIPFromNetworkInfo(tuples[1])
-		case "pid":
-			pid, err := strconv.Atoi(tuples[1])
-			if err != nil {
-				return nil, fmt.Errorf("cannot parse pid from %s: %v", tuples[1], err)
-			}
-			p.pid = pid
-		}
-		if strings.HasPrefix(tuples[0], "sha512") {
-			exitcode, err := strconv.Atoi(tuples[1])
-			if err != nil {
-				return nil, fmt.Errorf("cannot parse exit code from %s : %v", tuples[1], err)
-			}
-			p.exitCodes[tuples[0]] = exitcode
-		}
-	}
-	return p, nil
-}
-
-// getIPFromNetworkInfo returns the IP of a pod by parsing the network info.
+// getIP returns the IP of a pod by parsing the network info.
 // The network info looks like this:
 //
 // default:ip4=172.16.28.3, database:ip4=172.16.28.42
 //
-func getIPFromNetworkInfo(networkInfo string) string {
-	parts := strings.Split(networkInfo, ",")
+func (p *podInfo) getIP() string {
+	parts := strings.Split(p.networkInfo, ",")
 
 	for _, part := range parts {
 		if strings.HasPrefix(part, "default:") {
-			tuples := strings.Split(part, "=")
-			if len(tuples) == 2 {
-				return tuples[1]
-			}
+			return strings.Split(part, "=")[1]
 		}
 	}
 	return ""
 }
 
-// getContainerStatus creates the api.containerStatus of a container from the podInfo.
+// getContainerStatus converts the rkt pod state to the api.containerStatus.
 // TODO(yifan): Get more detailed info such as Image, ImageID, etc.
 func (p *podInfo) getContainerStatus(container *kubecontainer.Container) api.ContainerStatus {
 	var status api.ContainerStatus
 	status.Name = container.Name
 	status.Image = container.Image
-	containerID, _ := parseContainerID(string(container.ID))
-	status.ImageID = containerID.imageID
-
 	switch p.state {
 	case Running:
 		// TODO(yifan): Get StartedAt.
@@ -130,57 +76,56 @@ func (p *podInfo) getContainerStatus(container *kubecontainer.Container) api.Con
 	case Embryo, Preparing, Prepared:
 		status.State = api.ContainerState{Waiting: &api.ContainerStateWaiting{}}
 	case AbortedPrepare, Deleting, Exited, Garbage:
-		exitCode, ok := p.exitCodes[status.ImageID]
-		if !ok {
-			glog.Warningf("rkt: Cannot get exit code for container %v", container)
-		}
-		exitCode = -1
 		status.State = api.ContainerState{
 			Termination: &api.ContainerStateTerminated{
-				ExitCode:  exitCode,
 				StartedAt: util.Unix(container.Created, 0),
 			},
 		}
 	default:
-		glog.Warningf("rkt: Unknown pod state: %q for container %q with name %q", p.state, containerID, container.Name)
+		glog.Warningf("Unknown pod state: %q", p.state)
 	}
 	return status
 }
 
-// toPodStatus converts a podInfo type into an api.PodStatus type.
 func (p *podInfo) toPodStatus(pod *kubecontainer.Pod) api.PodStatus {
 	var status api.PodStatus
-	status.PodIP = p.ip
-	// For now just make every container's state the same as the pod.
+	status.PodIP = p.getIP()
+	// For now just make every container's state as same as the pod.
 	for _, container := range pod.Containers {
 		status.ContainerStatuses = append(status.ContainerStatuses, p.getContainerStatus(container))
 	}
 	return status
 }
 
-// splitLineByTab breaks a line by tabs, and trims the leading and tailing spaces.
-func splitLineByTab(line string) []string {
+// splitLine breaks a line by tabs, and trims the leading and tailing spaces.
+func splitLine(line string) []string {
 	var result []string
-	tuples := strings.Split(strings.TrimSpace(line), "\t")
-	for _, t := range tuples {
-		if t != "" {
-			result = append(result, t)
+	start := 0
+
+	line = strings.TrimSpace(line)
+	for i := 0; i < len(line); i++ {
+		if line[i] == '\t' {
+			result = append(result, line[start:i])
+			for line[i] == '\t' {
+				i++
+			}
+			start = i
 		}
 	}
+	result = append(result, line[start:])
 	return result
 }
 
 // getPodInfos returns a map of [pod-uuid]:*podInfo
 func (r *Runtime) getPodInfos() (map[string]*podInfo, error) {
-	result := make(map[string]*podInfo)
-
 	output, err := r.runCommand("list", "--no-legend", "--full")
 	if err != nil {
-		return result, err
+		return nil, err
 	}
+
 	if len(output) == 0 {
-		// No pods are running.
-		return result, nil
+		// No pods is running.
+		return nil, nil
 	}
 
 	// Example output of current 'rkt list --full' (version == 0.4.2):
@@ -191,28 +136,20 @@ func (r *Runtime) getPodInfos() (map[string]*podInfo, error) {
 	// 40e2813b-9d5d-4146-a817-0de92646da96 bar     exited
 	//
 	// With '--no-legend', the first line is eliminated.
-	for _, line := range output {
-		if line == "" {
-			continue
-		}
-		tuples := splitLineByTab(line)
-		if len(tuples) < 2 { // At least it should have 3 entries.
-			//glog.Warningf("rkt: Unrecognized line: %q (%d:%v) %v", line, len(tuples), tuples, output)
-			continue
-		}
-		id := tuples[0]
 
-		status, err := r.runCommand("status", id)
-		if err != nil {
-			glog.Errorf("rkt: Cannot get status for pod (uuid=%q): %v", id, err)
+	result := make(map[string]*podInfo)
+	for _, line := range output {
+		tuples := splitLine(line)
+		if len(tuples) < 3 { // At least it should have 3 entries.
 			continue
 		}
-		info, err := parsePodInfo(status)
-		if err != nil {
-			glog.Errorf("rkt: Cannot parse status for pod (uuid=%q): %v", id, err)
-			continue
+		info := &podInfo{
+			state: tuples[2],
 		}
-		result[id] = info
+		if len(tuples) == 4 {
+			info.networkInfo = tuples[3]
+		}
+		result[tuples[0]] = info
 	}
 	return result, nil
 }
