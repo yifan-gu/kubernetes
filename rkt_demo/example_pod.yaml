@@ -1,0 +1,11 @@
+apiVersion: v1beta3
+kind: Pod
+metadata:
+  labels:
+    name: bar
+  name: nginx
+spec:
+  containers:
+    - name: nginx
+      image: docker://nginx
+  restartPolicy: Never

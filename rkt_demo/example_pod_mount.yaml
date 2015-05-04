@@ -1,0 +1,23 @@
+apiVersion: v1beta3
+kind: Pod
+metadata:
+  labels:
+    name: mount
+  name: mount
+spec:
+  containers:
+    - name: mounttest
+      image: http://users.developer.core-os.net/k8s_tests/mount_test.aci
+      volumeMounts:
+        - mountPath: /foo
+          name: foo
+        - mountPath: /bar
+          name: bar
+  volumes:
+    - name: foo
+      hostPath:
+        path: /tmp
+    - name: bar
+      hostPath:
+        path: /tmp
+  restartPolicy: Never
