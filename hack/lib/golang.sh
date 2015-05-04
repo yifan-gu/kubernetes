@@ -69,9 +69,9 @@ readonly KUBE_CLIENT_PLATFORMS=(
   linux/amd64
   linux/386
   linux/arm
-  darwin/amd64
-  darwin/386
-  windows/amd64
+  #darwin/amd64
+  #darwin/386
+  #windows/amd64
 )
 
 # Gigabytes desired for parallel platform builds. 8 is fairly
@@ -90,6 +90,7 @@ readonly KUBE_STATIC_LIBRARIES=(
   kube-apiserver
   kube-controller-manager
   kube-scheduler
+  kubelet
   hyperkube
 )
 

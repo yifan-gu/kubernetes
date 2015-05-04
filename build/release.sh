@@ -31,10 +31,10 @@ kube::build::verify_prereqs
 kube::build::build_image
 kube::build::run_build_command hack/build-cross.sh
 
-if [[ $KUBE_RELEASE_RUN_TESTS =~ ^[yY]$ ]]; then
-  kube::build::run_build_command hack/test-go.sh
-  kube::build::run_build_command hack/test-integration.sh
-fi
+#if [[ $KUBE_RELEASE_RUN_TESTS =~ ^[yY]$ ]]; then
+#  kube::build::run_build_command hack/test-go.sh
+#  kube::build::run_build_command hack/test-integration.sh
+#fi
 
 kube::build::copy_output
 kube::release::package_tarballs

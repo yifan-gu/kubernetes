@@ -44,6 +44,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/metrics"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/network"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/prober"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/rkt"
 	kubeletTypes "github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/types"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/labels"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
@@ -260,6 +261,17 @@ func NewMainKubelet(
 			klet,
 			klet.httpClient,
 			newKubeletRuntimeHooks(recorder))
+	case "rkt":
+		// TODO(vmarmol): add these values.
+		conf := &rkt.Config{
+			Debug:              true,
+			InsecureSkipVerify: true,
+		}
+		rktRuntime, err := rkt.New(conf, klet, recorder, containerRefManager, readinessManager)
+		if err != nil {
+			return nil, err
+		}
+		klet.containerRuntime = rktRuntime
 	default:
 		return nil, fmt.Errorf("unsupported container runtime %q specified", containerRuntime)
 	}
@@ -1376,7 +1388,11 @@ func (kl *Kubelet) GetKubeletContainerLogs(podFullName, containerName, tail stri
 		// waiting state.
 		return err
 	}
-	return kl.containerRuntime.GetContainerLogs(containerID, tail, follow, stdout, stderr)
+	pod, ok := kl.GetPodByFullName(podFullName)
+	if !ok {
+		return fmt.Errorf("unable to get logs for container %q in pod %q: unable to find pod", containerName, podFullName)
+	}
+	return kl.containerRuntime.GetContainerLogs(pod, containerID, tail, follow, stdout, stderr)
 }
 
 // GetHostname Returns the hostname as the kubelet sees it.

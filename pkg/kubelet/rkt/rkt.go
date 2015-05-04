@@ -31,6 +31,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/capabilities"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/client/record"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/credentialprovider"
 	kubecontainer "github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/container"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/prober"
@@ -81,10 +82,16 @@ type Runtime struct {
 	dockerKeyring credentialprovider.DockerKeyring
 }
 
+var _ kubecontainer.Runtime = &Runtime{}
+
 // New creates the rkt container runtime which implements the container runtime interface.
 // It will test if the rkt binary is in the $PATH, and whether we can get the
 // version of it. If so, creates the rkt container runtime, otherwise returns an error.
-func New(config *Config) (*Runtime, error) {
+func New(config *Config,
+	generator kubecontainer.RunContainerOptionsGenerator,
+	recorder record.EventRecorder,
+	containerRefManager *kubecontainer.RefManager,
+	readinessManager *kubecontainer.ReadinessManager) (*Runtime, error) {
 	systemdVersion, err := getSystemdVersion()
 	if err != nil {
 		return nil, err
@@ -109,11 +116,14 @@ func New(config *Config) (*Runtime, error) {
 	}
 
 	rkt := &Runtime{
-		systemd:       systemd,
-		rktBinAbsPath: rktBinAbsPath,
-		config:        config,
-		dockerKeyring: credentialprovider.NewDockerKeyring(),
+		generator:        generator,
+		readinessManager: readinessManager,
+		systemd:          systemd,
+		rktBinAbsPath:    rktBinAbsPath,
+		config:           config,
+		dockerKeyring:    credentialprovider.NewDockerKeyring(),
 	}
+	rkt.prober = prober.New(rkt, readinessManager, containerRefManager, recorder)
 
 	// Test the rkt version.
 	version, err := rkt.Version()
@@ -143,10 +153,7 @@ func (r *Runtime) runCommand(args ...string) ([]string, error) {
 	glog.V(4).Info("rkt: Run command:", args)
 
 	output, err := r.buildCommand(args...).Output()
-	if err != nil {
-		return nil, err
-	}
-	return strings.Split(strings.TrimSpace(string(output)), "\n"), nil
+	return strings.Split(strings.TrimSpace(string(output)), "\n"), err
 }
 
 // makePodServiceFileName constructs the unit file name for a pod using its UID.
@@ -278,6 +285,7 @@ func setApp(app *appctypes.App, c *api.Container) error {
 	for _, m := range c.VolumeMounts {
 		mountPointName, err := appctypes.NewACName(m.Name)
 		if err != nil {
+			glog.Infof("????Failed to create ACName %q with error: %v", m.Name, err)
 			return err
 		}
 		app.MountPoints = append(app.MountPoints, appctypes.MountPoint{
@@ -292,8 +300,13 @@ func setApp(app *appctypes.App, c *api.Container) error {
 		app.Ports = []appctypes.Port{}
 	}
 	for _, p := range c.Ports {
-		portName, err := appctypes.NewACName(p.Name)
+		n := p.Name
+		if n == "" {
+			n = fmt.Sprintf("port-%d", p.ContainerPort)
+		}
+		portName, err := appctypes.NewACName(n)
 		if err != nil {
+			glog.Infof("Failed to create ACName %q with error: %v", n, err)
 			return err
 		}
 		app.Ports = append(app.Ports, appctypes.Port{
@@ -305,6 +318,13 @@ func setApp(app *appctypes.App, c *api.Container) error {
 
 	// Override isolators.
 	return setIsolators(app, c)
+}
+
+func makeDockerImage(img string) string {
+	if !strings.HasPrefix(img, "docker://") {
+		return fmt.Sprintf("docker://%s", img)
+	}
+	return img
 }
 
 // makePodManifest transforms a kubelet pod spec to the rkt pod manifest.
@@ -326,9 +346,9 @@ func (r *Runtime) makePodManifest(pod *api.Pod, volumeMap map[string]volume.Volu
 	}
 	for _, c := range pod.Spec.Containers {
 		// Assume we are running docker images for now, see #7203.
-		imageID, err := r.getImageID(c.Image)
+		imageID, err := r.getImageID(makeDockerImage(c.Image))
 		if err != nil {
-			return nil, fmt.Errorf("cannot get image ID for %q: %v", c.Image, err)
+			return nil, fmt.Errorf("cannot get image ID for %q: %v", makeDockerImage(c.Image), err)
 		}
 		hash, err := appctypes.NewHash(imageID)
 		if err != nil {
@@ -419,14 +439,14 @@ func (r *Runtime) apiPodToRuntimePod(uuid string, pod *api.Pod) *kubecontainer.P
 	}
 	for i := range pod.Spec.Containers {
 		c := &pod.Spec.Containers[i]
-		imageID, err := r.getImageID(c.Image)
+		imageID, err := r.getImageID(makeDockerImage(c.Image))
 		if err != nil {
 			glog.Warningf("rkt: Cannot get image id: %v", err)
 		}
 		p.Containers = append(p.Containers, &kubecontainer.Container{
 			ID:      types.UID(buildContainerID(&containerID{uuid, c.Name, imageID})),
 			Name:    c.Name,
-			Image:   c.Image,
+			Image:   makeDockerImage(c.Image),
 			Hash:    hashContainer(c),
 			Created: time.Now().Unix(),
 		})
@@ -448,6 +468,7 @@ func (r *Runtime) preparePod(pod *api.Pod, volumeMap map[string]volume.Volume) (
 	// Generate the pod manifest from the pod spec.
 	manifest, err := r.makePodManifest(pod, volumeMap)
 	if err != nil {
+		glog.Infof("????? Error on call makePodManifest %q: %v", pod.Name, err)
 		return "", false, err
 	}
 	manifestFile, err := ioutil.TempFile("", "manifest")
@@ -522,6 +543,7 @@ func (r *Runtime) RunPod(pod *api.Pod, volumeMap map[string]volume.Volume) error
 
 	name, needReload, err := r.preparePod(pod, volumeMap)
 	if err != nil {
+		glog.Infof("????? Error on call preparedPod %q: %v", pod.Name, err)
 		return err
 	}
 	if needReload {

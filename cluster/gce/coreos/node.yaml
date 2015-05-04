@@ -62,21 +62,34 @@ coreos:
         -o /etc/kube-env \
         http://metadata.google.internal/computeMetadata/v1/instance/attributes/kube-env
 
-    - name: kubernetes-install-rkt.service
-      command: start
-      content: |
-        [Unit]
-        Description=Fetch Rocket
-        Documentation=http://github.com/coreos/rkt
-        Requires=network-online.target
-        After=network-online.target
-        [Service]
-        EnvironmentFile=/etc/kube-env
-        ExecStartPre=/usr/bin/mkdir -p /opt/rkt
-        ExecStartPre=/usr/bin/wget \
-        -O /opt/rkt/rkt-v0.5.4.tar.gz \
-        https://github.com/coreos/rkt/releases/download/v0.5.4/rkt-v0.5.4.tar.gz
-        ExecStart=/usr/bin/tar xzvf /opt/rkt/rkt-v0.5.4.tar.gz -C /opt --overwrite
+#    - name: kubernetes-download-rkt.service
+#      command: start
+#      content: |
+#        [Unit]
+#        Description=Fetch Rocket
+#        Documentation=http://github.com/coreos/rkt
+#        Requires=network-online.target
+#        After=network-online.target
+#        [Service]
+#        Type=oneshot
+#        EnvironmentFile=/etc/kube-env
+#        ExecStartPre=/usr/bin/mkdir -p /opt/rkt
+#        ExecStart=/usr/bin/wget \
+#        -O /opt/rkt/rkt-v0.5.5.tar.gz \
+#        https://github.com/coreos/rkt/releases/download/v0.5.5/rkt-v0.5.5.tar.gz
+
+#    - name: kubernetes-install-rkt.service
+#      command: start
+#      content: |
+#        [Unit]
+#        Description=Install Rocket
+#        Documentation=http://github.com/coreos/rkt
+#        Requires=kubernetes-download-rkt.service
+#        After=kubernetes-download-rkt.service
+#        [Service]
+#        Type=oneshot
+#        EnvironmentFile=/etc/kube-env
+#        ExecStart=/usr/bin/tar xzvf /opt/rkt/rkt-v0.5.5.tar.gz -C /opt --skip-old-files
 
     - name: kubernetes-install-minion.service
       command: start
@@ -102,14 +115,44 @@ coreos:
         Description=Configure Node For Kubernetes service
         Requires=kubernetes-install-minion.service
         After=kubernetes-install-minion.service
-        Requires=kubernetes-install-rkt.service
-        After=kubernetes-install-rkt.service
+        #Requires=kubernetes-install-rkt.service
+        #After=kubernetes-install-rkt.service
         [Service]
         Type=oneshot
         RemainAfterExit=yes
         EnvironmentFile=/etc/kube-env
         # TODO(dawnchen): Push this to separate write-files
         ExecStart=/run/configure-hostname.sh
+
+    - name: rkt-metadata.socket
+      command: start
+      content: |
+        [Unit]
+        Description=rkt metadata service socket
+        PartOf=rkt-metadata.service
+        #Requires=kubernetes-install-rkt.service
+        #After=kubernetes-install-rkt.service
+        [Socket]
+        ListenStream=/run/rkt/metadata-svc.sock
+        SocketMode=0660
+        SocketUser=root
+        SocketGroup=root
+        RemoveOnStop=true
+
+    - name: rkt-metadata.service
+      command: start
+      content: |
+        [Unit]
+        Description=rkt metadata service
+        Documentation=http://github.com/coreos/rkt
+        Requires=rkt-metadata.socket
+        After=network.target rkt-metadata.socket
+        #Requires=kubernetes-install-rkt.service
+        #After=kubernetes-install-rkt.service
+        [Service]
+        # TODO(yifan): Make version configuable.
+        #ExecStart=/opt/rkt-v0.5.5/rkt metadata-service
+        ExecStart=/bin/rkt metadata-service
 
     - name: kubelet.service
       command: start
@@ -129,7 +172,8 @@ coreos:
         --v=2 \
         --cluster_dns=10.0.0.10 \
         --cluster_domain=kubernetes.local \
-        --logtostderr=true
+        --logtostderr=true \
+        --container-runtime=${KUBERNETES_CONTAINER_RUNTIME}
         Restart=always
         RestartSec=10
 
@@ -140,8 +184,8 @@ coreos:
         Description=Start Kube-proxy service as Daemon
         Requires=kubernetes-install-minion.service
         After=kubernetes-install-minion.service
-        Requires=kubernetes-install-rkt.service
-        After=kubernetes-install-rkt.service
+        #Requires=kubernetes-install-rkt.service
+        #After=kubernetes-install-rkt.service
         [Service]
         EnvironmentFile=/etc/kube-env
         ExecStartPre=/run/config-kube-proxy.sh
@@ -153,31 +197,3 @@ coreos:
         Restart=always
         RestartSec=10
 
-    - name: rkt-metadata.socket
-      command: start
-      content: |
-        [Unit]
-        Description=rkt metadata service socket
-        PartOf=rkt-metadata.service
-        Requires=kubernetes-install-rkt.service
-        After=kubernetes-install-rkt.service
-        [Socket]
-        ListenStream=/run/rkt/metadata-svc.sock
-        SocketMode=0660
-        SocketUser=root
-        SocketGroup=root
-        RemoveOnStop=true
-
-    - name: rkt-metadata.service
-      command: start
-      content: |
-        [Unit]
-        Description=rkt metadata service
-        Documentation=http://github.com/coreos/rkt
-        Requires=rkt-metadata.socket
-        After=network.target rkt-metadata.socket
-        Requires=kubernetes-install-rkt.service
-        After=kubernetes-install-rkt.service
-        [Service]
-        # TODO(yifan): Make version configuable.
-        ExecStart=/opt/rkt-v0.5.4/rkt metadata-service
