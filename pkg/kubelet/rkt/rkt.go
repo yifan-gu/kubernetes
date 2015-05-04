@@ -321,9 +321,9 @@ func setApp(app *appctypes.App, c *api.Container) error {
 }
 
 func makeDockerImage(img string) string {
-	if !strings.HasPrefix(img, "docker://") {
-		return fmt.Sprintf("docker://%s", img)
-	}
+	//if !strings.HasPrefix(img, "docker://") {
+	//	return fmt.Sprintf("docker://%s", img)
+	//}
 	return img
 }
 
