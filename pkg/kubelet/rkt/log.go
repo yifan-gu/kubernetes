@@ -46,5 +46,5 @@ func (r *Runtime) GetContainerLogs(pod *api.Pod, containerID string, tail string
 		}
 	}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
-	return cmd.Start()
+	return cmd.Run()
 }
