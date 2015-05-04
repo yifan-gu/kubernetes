@@ -23,7 +23,10 @@ import (
 
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/types"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/volume"
 )
+
+type VolumeMap map[string]volume.Volume
 
 type Version interface {
 	// Compare compares two versions of the runtime. On success it returns -1

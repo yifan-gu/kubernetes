@@ -93,8 +93,6 @@ type SyncHandler interface {
 
 type SourcesReadyFn func() bool
 
-type volumeMap map[string]volume.Volume
-
 // New creates a new Kubelet for use in main
 func NewMainKubelet(
 	hostname string,
@@ -267,7 +265,7 @@ func NewMainKubelet(
 			Debug:              true,
 			InsecureSkipVerify: true,
 		}
-		rktRuntime, err := rkt.New(conf, klet, recorder, containerRefManager, readinessManager)
+		rktRuntime, err := rkt.New(conf, klet, recorder, containerRefManager, readinessManager, klet.volumeManager)
 		if err != nil {
 			return nil, err
 		}
@@ -641,7 +639,7 @@ func (kl *Kubelet) syncNodeStatus() {
 	}
 }
 
-func makeBinds(container *api.Container, podVolumes volumeMap) (binds []string) {
+func makeBinds(container *api.Container, podVolumes kubecontainer.VolumeMap) (binds []string) {
 	for _, mount := range container.VolumeMounts {
 		vol, ok := podVolumes[mount.Name]
 		if !ok {

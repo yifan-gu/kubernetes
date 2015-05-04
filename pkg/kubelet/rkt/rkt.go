@@ -80,9 +80,15 @@ type Runtime struct {
 	config        *Config
 	// TODO(yifan): Refactor this to be generic keyring.
 	dockerKeyring credentialprovider.DockerKeyring
+	volumeGetter  volumeGetter
 }
 
 var _ kubecontainer.Runtime = &Runtime{}
+
+// TODO(yifan): Remove this when volumeManger is moved to separate package.
+type volumeGetter interface {
+	GetVolumes(podUID types.UID) (kubecontainer.VolumeMap, bool)
+}
 
 // New creates the rkt container runtime which implements the container runtime interface.
 // It will test if the rkt binary is in the $PATH, and whether we can get the
@@ -91,7 +97,8 @@ func New(config *Config,
 	generator kubecontainer.RunContainerOptionsGenerator,
 	recorder record.EventRecorder,
 	containerRefManager *kubecontainer.RefManager,
-	readinessManager *kubecontainer.ReadinessManager) (*Runtime, error) {
+	readinessManager *kubecontainer.ReadinessManager,
+	volumeGetter volumeGetter) (*Runtime, error) {
 	systemdVersion, err := getSystemdVersion()
 	if err != nil {
 		return nil, err
@@ -122,6 +129,7 @@ func New(config *Config,
 		rktBinAbsPath:    rktBinAbsPath,
 		config:           config,
 		dockerKeyring:    credentialprovider.NewDockerKeyring(),
+		volumeGetter:     volumeGetter,
 	}
 	rkt.prober = prober.New(rkt, readinessManager, containerRefManager, recorder)
 
@@ -541,7 +549,11 @@ func (r *Runtime) preparePod(pod *api.Pod, volumeMap map[string]volume.Volume) (
 func (r *Runtime) RunPod(pod *api.Pod, volumeMap map[string]volume.Volume) error {
 	glog.V(4).Infof("Rkt starts to run pod: name %q.", pod.Name)
 
-	name, needReload, err := r.preparePod(pod, volumeMap)
+	vol, ok := r.volumeGetter.GetVolumes(pod.UID)
+	if !ok {
+		return fmt.Errorf("error get volumes")
+	}
+	name, needReload, err := r.preparePod(pod, vol)
 	if err != nil {
 		glog.Infof("????? Error on call preparedPod %q: %v", pod.Name, err)
 		return err
