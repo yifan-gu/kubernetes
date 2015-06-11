@@ -20,6 +20,7 @@ before_install:
   - if [[ $SHIPPABLE_GO_VERSION =~ [0-9].[0-9] ]]; then gvm install go$SHIPPABLE_GO_VERSION; gvm use go$SHIPPABLE_GO_VERSION; fi
   - export GOPATH=$SHIPPABLE_GOPATH
   - ln -s $GOPATH/src/github.com/yifan-gu $GOPATH/src/github.com/GoogleCloudPlatform
+  - cd $GOPATH/src/github.com/GoogleCloudPlatform/kubernetes
 
 install:
   - if ! go get code.google.com/p/go.tools/cmd/cover; then go get golang.org/x/tools/cmd/cover; fi
