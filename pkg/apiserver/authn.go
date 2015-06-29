@@ -28,39 +28,58 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/auth/authenticator/request/basicauth"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/auth/authenticator/request/union"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/auth/authenticator/request/x509"
+	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/auth/authenticator/token/openid"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/auth/authenticator/token/tokenfile"
 )
 
+type AuthenticatorConfig struct {
+	BasicAuthFile         string
+	ClientCAFile          string
+	TokenAuthFile         string
+	OpenIDClientID        string
+	OpenIDEndpoint        string
+	ServiceAccountKeyFile string
+	ServiceAccountLookup  bool
+}
+
 // NewAuthenticator returns an authenticator.Request or an error
-func NewAuthenticator(basicAuthFile, clientCAFile, tokenFile, serviceAccountKeyFile string, serviceAccountLookup bool, helper tools.EtcdHelper) (authenticator.Request, error) {
+func NewAuthenticator(config AuthenticatorConfig, helper tools.EtcdHelper) (authenticator.Request, error) {
 	var authenticators []authenticator.Request
 
-	if len(basicAuthFile) > 0 {
-		basicAuth, err := newAuthenticatorFromBasicAuthFile(basicAuthFile)
+	if len(config.BasicAuthFile) > 0 {
+		basicAuth, err := newAuthenticatorFromBasicAuthFile(config.BasicAuthFile)
 		if err != nil {
 			return nil, err
 		}
 		authenticators = append(authenticators, basicAuth)
 	}
 
-	if len(clientCAFile) > 0 {
-		certAuth, err := newAuthenticatorFromClientCAFile(clientCAFile)
+	if len(config.ClientCAFile) > 0 {
+		certAuth, err := newAuthenticatorFromClientCAFile(config.ClientCAFile)
 		if err != nil {
 			return nil, err
 		}
 		authenticators = append(authenticators, certAuth)
 	}
 
-	if len(tokenFile) > 0 {
-		tokenAuth, err := newAuthenticatorFromTokenFile(tokenFile)
+	if len(config.TokenAuthFile) > 0 {
+		tokenAuth, err := newAuthenticatorFromTokenFile(config.TokenAuthFile)
 		if err != nil {
 			return nil, err
 		}
 		authenticators = append(authenticators, tokenAuth)
 	}
 
-	if len(serviceAccountKeyFile) > 0 {
-		serviceAccountAuth, err := newServiceAccountAuthenticator(serviceAccountKeyFile, serviceAccountLookup, helper)
+	if len(config.OpenIDEndpoint) > 0 && len(config.OpenIDClientID) > 0 {
+		openIDAuth, err := newAuthenticatorFromOpenIDEndpoint(config.OpenIDClientID, config.OpenIDEndpoint)
+		if err != nil {
+			return nil, err
+		}
+		authenticators = append(authenticators, openIDAuth)
+	}
+
+	if len(config.ServiceAccountKeyFile) > 0 {
+		serviceAccountAuth, err := newServiceAccountAuthenticator(config.ServiceAccountKeyFile, config.ServiceAccountLookup, helper)
 		if err != nil {
 			return nil, err
 		}
@@ -96,6 +115,16 @@ func newAuthenticatorFromBasicAuthFile(basicAuthFile string) (authenticator.Requ
 // newAuthenticatorFromTokenFile returns an authenticator.Request or an error
 func newAuthenticatorFromTokenFile(tokenAuthFile string) (authenticator.Request, error) {
 	tokenAuthenticator, err := tokenfile.NewCSV(tokenAuthFile)
+	if err != nil {
+		return nil, err
+	}
+
+	return bearertoken.New(tokenAuthenticator), nil
+}
+
+// newAuthenticatorFromOpenIDEndpoint returns an authenticator.Request or an error.
+func newAuthenticatorFromOpenIDEndpoint(clientID, endpoint string) (authenticator.Request, error) {
+	tokenAuthenticator, err := openid.NewOpenID(clientID, endpoint)
 	if err != nil {
 		return nil, err
 	}
