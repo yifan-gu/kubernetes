@@ -808,13 +808,20 @@ func (r *Runtime) KillPod(pod *api.Pod, runningPod kubecontainer.Pod) error {
 		r.containerRefManager.ClearRef(id)
 	}
 
+	// Touch the systemd service file to update the mod time so it will
+	// not be garbage collected too soon.
+	if err := os.Chtimes(serviceFilePath(serviceName), time.Now(), time.Now()); err != nil {
+		glog.Errorf("rkt: Failed to change the modification time of the service file %v: %v", serviceName, err)
+		return err
+	}
+
 	// Since all service file have 'KillMode=mixed', the processes in
 	// the unit's cgroup will receive a SIGKILL if the normal stop timeouts.
 	if _, err := r.systemd.StopUnit(serviceName, "replace"); err != nil {
+		glog.Errorf("rkt: Failed to stop unit %v: %v", serviceName, err)
 		return err
 	}
-	// Remove the systemd service file as well.
-	return os.Remove(serviceFilePath(serviceName))
+	return nil
 }
 
 // getPodStatus reads the service file and invokes 'rkt status $UUID' to get the
@@ -1093,6 +1100,38 @@ func (r *Runtime) GarbageCollect() error {
 	if _, err := r.runCommand("gc", "--grace-period="+defaultGracePeriod, "--expire-prepared="+defaultExpirePrepared); err != nil {
 		glog.Errorf("rkt: Failed to gc: %v", err)
 		return err
+	}
+
+	// GC all inactive systemd service files.
+	units, err := r.systemd.ListUnits()
+	if err != nil {
+		glog.Errorf("rkt: Failed to list units: %v", err)
+		return err
+	}
+	runningUnits := make(map[string]struct{})
+	for _, u := range units {
+		if strings.HasPrefix(u.Name, kubernetesUnitPrefix) && u.SubState == "running" {
+			runningUnits[u.Name] = struct{}{}
+		}
+	}
+
+	files, err := ioutil.ReadDir(systemdServiceDir)
+	if err != nil {
+		glog.Errorf("rkt: Failed to read the systemd service directory: %v", err)
+		return err
+	}
+	for _, f := range files {
+		if strings.HasPrefix(f.Name(), kubernetesUnitPrefix) {
+			if _, ok := runningUnits[f.Name()]; !ok {
+				// TODO(yifan): Change to MinAge in gc policy.
+				if f.ModTime().Before(time.Now().Add(-time.Minute)) {
+					glog.V(4).Infof("rkt: Removing inactive systemd service file: %v", f.Name())
+					if err := os.Remove(serviceFilePath(f.Name())); err != nil {
+						glog.Warningf("rkt: Failed to remove inactive systemd service file %v: %v", f.Name(), err)
+					}
+				}
+			}
+		}
 	}
 	return nil
 }
