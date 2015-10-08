@@ -27,6 +27,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	appcschema "github.com/appc/spec/schema"
@@ -46,6 +47,7 @@ import (
 	"k8s.io/kubernetes/pkg/securitycontext"
 	"k8s.io/kubernetes/pkg/types"
 	"k8s.io/kubernetes/pkg/util"
+	utilExec "k8s.io/kubernetes/pkg/util/exec"
 )
 
 const (
@@ -1108,8 +1110,42 @@ func (r *Runtime) RunInContainer(containerID string, cmd []string) ([]byte, erro
 	args := append([]string{}, "enter", fmt.Sprintf("--app=%s", id.appName), id.uuid)
 	args = append(args, cmd...)
 
-	result, err := r.runCommand(args...)
-	return []byte(strings.Join(result, "\n")), err
+	result, err := r.buildCommand(args...).CombinedOutput()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			err = &rktExitError{exitErr}
+		}
+	}
+	return result, err
+}
+
+var _ utilExec.ExitError = &rktExitError{}
+
+// rktExitError implemets /pkg/util/exec.ExitError interface.
+type rktExitError struct {
+	err *exec.ExitError
+}
+
+func (r *rktExitError) String() string {
+	return r.err.Error()
+}
+
+func (r *rktExitError) Error() string {
+	return r.String()
+}
+
+func (r *rktExitError) Exited() bool {
+	if status, ok := r.err.Sys().(syscall.WaitStatus); ok {
+		return status.Exited()
+	}
+	return false
+}
+
+func (r *rktExitError) ExitStatus() int {
+	if status, ok := r.err.Sys().(syscall.WaitStatus); ok {
+		return status.ExitStatus()
+	}
+	return 0
 }
 
 func (r *Runtime) AttachContainer(containerID string, stdin io.Reader, stdout, stderr io.WriteCloser, tty bool) error {
