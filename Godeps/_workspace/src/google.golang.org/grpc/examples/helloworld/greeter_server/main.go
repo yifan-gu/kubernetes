@@ -31,60 +31,35 @@
  *
  */
 
-/*
-Package grpclog defines logging for grpc.
-*/
-package grpclog
+package main
 
 import (
 	"log"
-	"os"
+	"net"
+
+	pb "google.golang.org/grpc/examples/helloworld/helloworld"
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
 )
 
-// Use golang's standard logger by default.
-var logger Logger = log.New(os.Stderr, "", log.LstdFlags)
+const (
+	port = ":50051"
+)
 
-// Logger mimics golang's standard Logger as an interface.
-type Logger interface {
-	Fatal(args ...interface{})
-	Fatalf(format string, args ...interface{})
-	Fatalln(args ...interface{})
-	Print(args ...interface{})
-	Printf(format string, args ...interface{})
-	Println(args ...interface{})
+// server is used to implement hellowrld.GreeterServer.
+type server struct{}
+
+// SayHello implements helloworld.GreeterServer
+func (s *server) SayHello(ctx context.Context, in *pb.HelloRequest) (*pb.HelloReply, error) {
+	return &pb.HelloReply{Message: "Hello " + in.Name}, nil
 }
 
-// SetLogger sets the logger that is used in grpc.
-func SetLogger(l Logger) {
-	logger = l
-}
-
-// Fatal is equivalent to Print() followed by a call to os.Exit() with a non-zero exit code.
-func Fatal(args ...interface{}) {
-	logger.Fatal(args...)
-}
-
-// Fatalf is equivalent to Printf() followed by a call to os.Exit() with a non-zero exit code.
-func Fatalf(format string, args ...interface{}) {
-	logger.Fatalf(format, args...)
-}
-
-// Fatalln is equivalent to Println() followed by a call to os.Exit()) with a non-zero exit code.
-func Fatalln(args ...interface{}) {
-	logger.Fatalln(args...)
-}
-
-// Print prints to the logger. Arguments are handled in the manner of fmt.Print.
-func Print(args ...interface{}) {
-	logger.Print(args...)
-}
-
-// Printf prints to the logger. Arguments are handled in the manner of fmt.Printf.
-func Printf(format string, args ...interface{}) {
-	logger.Printf(format, args...)
-}
-
-// Println prints to the logger. Arguments are handled in the manner of fmt.Println.
-func Println(args ...interface{}) {
-	logger.Println(args...)
+func main() {
+	lis, err := net.Listen("tcp", port)
+	if err != nil {
+		log.Fatalf("failed to listen: %v", err)
+	}
+	s := grpc.NewServer()
+	pb.RegisterGreeterServer(s, &server{})
+	s.Serve(lis)
 }

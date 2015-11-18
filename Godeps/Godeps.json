@@ -802,7 +802,7 @@
 		},
 		{
 			"ImportPath": "google.golang.org/grpc",
-			"Rev": "f5ebd86be717593ab029545492c93ddf8914832b"
+			"Rev": "4bd040ce23a624ff9a1d07b0e729ee189bddd51c"
 		},
 		{
 			"ImportPath": "gopkg.in/natefinch/lumberjack.v2",
