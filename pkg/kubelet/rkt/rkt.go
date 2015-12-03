@@ -41,6 +41,7 @@ import (
 	"github.com/golang/glog"
 	"golang.org/x/net/context"
 	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/client/record"
 	"k8s.io/kubernetes/pkg/credentialprovider"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
@@ -89,6 +90,8 @@ const (
 
 	defaultImageTag          = "latest"
 	defaultRktAPIServiceAddr = "localhost:15441"
+
+	defaultNetworkName = "rkt.kubernetes.io"
 )
 
 // Runtime implements the Containerruntime for rkt. The implementation
@@ -464,12 +467,12 @@ func (r *Runtime) makePodManifest(pod *api.Pod, pullSecrets []api.Secret) (*appc
 
 	restartCount := 0
 	for _, rktpod := range listResp.Pods {
-        //TODO: get the manifest from listresp.Pods when this gets merged: https://github.com/coreos/rkt/pull/1786
-        inspectReq := &rktapi.InspectPodRequest{rktpod.Id}
-        inspectResp, err := r.apisvc.InspectPod(context.Background(), inspectReq)
-        if err != nil {
-            return nil, err
-        }
+		//TODO: get the manifest from listresp.Pods when this gets merged: https://github.com/coreos/rkt/pull/1786
+		inspectReq := &rktapi.InspectPodRequest{rktpod.Id}
+		inspectResp, err := r.apisvc.InspectPod(context.Background(), inspectReq)
+		if err != nil {
+			return nil, err
+		}
 
 		manifest := appcschema.PodManifest{}
 		err = json.Unmarshal(inspectResp.Pod.Manifest, manifest)
@@ -674,7 +677,7 @@ func (r *Runtime) preparePod(pod *api.Pod, pullSecrets []api.Secret) (string, *k
 	if pod.Spec.SecurityContext != nil && pod.Spec.SecurityContext.HostNetwork {
 		runPrepared = fmt.Sprintf("%s run-prepared --mds-register=false --net=host %s", r.rktBinAbsPath, uuid)
 	} else {
-		runPrepared = fmt.Sprintf("%s run-prepared --mds-register=false %s", r.rktBinAbsPath, uuid)
+		runPrepared = fmt.Sprintf("%s run-prepared --mds-register=false --net=%s %s", r.rktBinAbsPath, defaultNetworkName, uuid)
 	}
 
 	// TODO handle pod.Spec.HostPID
@@ -1530,10 +1533,161 @@ func (r *Runtime) RemoveImage(image kubecontainer.ImageSpec) error {
 	return nil
 }
 
-func (r *Runtime) GetRawPodStatus(uid types.UID, name, namespace string) (*kubecontainer.RawPodStatus, error) {
-	return nil, fmt.Errorf("Not implemented yet")
+// appStateToContainerStatus converts v1alpha.AppState to kubecontainer.ContainerStatus.
+func (r *Runtime) appStateToContainerStatus(state v1alpha.AppState) kubecontainer.ContainerStatus {
+	switch state {
+	case v1alpha.AppState_APP_STATE_RUNNING:
+		return kubecontainer.ContainerStatusRunning
+	case v1alpha.AppState_APP_STATE_EXITED:
+		return kubecontainer.ContainerStatusExited
+	}
+	return kubecontainer.ContainerStatusUnknown
 }
 
-func (r *Runtime) ConvertRawToPodStatus(_ *api.Pod, _ *kubecontainer.RawPodStatus) (*api.PodStatus, error) {
-	return nil, fmt.Errorf("Not implemented yet")
+func (r *Runtime) GetRawPodStatus(uid types.UID, name, namespace string) (*kubecontainer.RawPodStatus, error) {
+	podStatus := &kubecontainer.RawPodStatus{
+		ID:        uid,
+		Name:      name,
+		Namespace: namespace,
+	}
+
+	// TODO(yifan): Use ListPods(detail=true) to avoid another InspectPod rpc here.
+	listReq := &rktapi.ListPodsRequest{
+		Filter: &rktapi.PodFilter{
+			Annotations: []*rktapi.KeyValue{
+				&rktapi.KeyValue{
+					Key:   k8sRktKubeletAnno,
+					Value: k8sRktKubeletAnnoValue,
+				},
+				&rktapi.KeyValue{
+					Key:   k8sRktUIDAnno,
+					Value: string(pod.UID),
+				},
+			},
+		},
+	}
+
+	result, err := r.apisvc.ListPods(context.Background(), listReq)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't list pods: %v", err)
+	}
+
+	var latestPod *v1alpha.Pod
+	var latestPodManifest *schema.PodManifest
+	var latestRestartCount int = -1
+	var latestCreationTime time.Time
+
+	// Only use the latest pod to get the information, (which has the
+	// largest restart count).
+	for _, rktpod := range listResp.Pods {
+		inspectReq := &rktapi.InspectPodRequest{rktpod.Id}
+		inspectResp, err := r.apisvc.InspectPod(context.Background(), inspectReq)
+		if err != nil {
+			glog.Warningf("rkt: Couldn't inspect rkt pod, (uuid %q): %v", rktpod.Id, err)
+			continue
+		}
+
+		var manifest appcschema.PodManifest
+		if err = json.Unmarshal(inspectResp.Pod.Manifest, &manifest); err != nil {
+			glog.Warningf("rkt: Couldn't unmarshal pod manifest for rkt pod, (uuid %q): %v", rktpod.Id, err)
+			continue
+		}
+
+		if creationTimeStr, ok := manifest.Annotations.Get(k8sRktCreationTimeAnno); !ok {
+			glog.Warningf("rkt: No creation timestamp in pod manifest for rkt pod, (uuid %q)", rktpod.Id)
+			continue
+		}
+
+		unixSec, err := strconv.ParseInt(creationTimeStr, 10, 64)
+		if err != nil {
+			glog.Warningf("rkt: Invalid creation timestamp in pod manifest for rkt pod, (uuid %q)", rktpod.Id)
+			continue
+		}
+
+		if countString, ok := manifest.Annotations.Get(k8sRktRestartCountAnno); ok {
+			num, err := strconv.Atoi(countString)
+			if err != nil {
+				glog.Warningf("rkt: Unrecognized restart count value (%q) for rkt pod, (uuid %q)", countString, rktpod.Id)
+				continue
+			}
+			if num > latestRestartCount {
+				latestRestartCount = num
+				latestPod = inspectResp.Pod
+				latestPodManifest = &manifest
+				latestCreationTime = time.Unix(unixSec)
+			}
+		}
+	}
+
+	// Try to fill the IP info.
+	for _, n := range latestPod.Networks {
+		if n.Name == defaultNetworkName {
+			podStatus.IP = n.Ipv4
+		}
+	}
+
+	for _, app := range latestPod.Apps {
+		if hash, ok := manifest.Apps.Annotations.Get(k8sRktContainerHashAnno); !ok {
+			glog.Warningf("rkt: No container hash in pod manifest for rkt pod, (uuid %q, app %q)", rktpod.Id, app.Name)
+			continue
+		}
+
+		podStatus.ContainerStatuses = append(postStatus.ContainerStatuses,
+			&kubecontainer.RawContainerStatus{
+				ID:     buildContainerID(&containerID{uuid: latestPod.Id, appName: app.Name}),
+				Name:   app.Name,
+				Status: appStateToContainerStatus(app.State),
+				// TODO(yifan): Use the creation/start/finished timestamp when it's implemented.
+				CreatedAt: latestCreationTime,
+				StartedAt: latestCreationTime,
+				ExitCode:  app.ExitCode,
+				Image:     app.Image.Name,
+				ImageID:   app.Image.Id,
+				Hash:      hash,
+				// TODO(yifan): Note that now all apps share the same restart count, this might
+				// change once apps don't share the same lifecycle.
+				// See https://github.com/appc/spec/pull/547.
+				RestartCount: latestRestartCount,
+				// TODO(yifan): Add reason message field.
+			})
+	}
+
+	return podStatus, nil
+}
+
+func (r *Runtime) ConvertRawToPodStatus(pod *api.Pod, status *kubecontainer.RawPodStatus) (*api.PodStatus, error) {
+	podStatus := &api.PodStatus{
+		Message: status.Message,
+		Reason:  status.Reason,
+		PodIP:   status.IP,
+	}
+
+	for _, c := range status.ContainerStatuses {
+		cc := &api.ContainerStatus{
+			Name:         c.Name,
+			RestartCount: c.RestartCount,
+			Image:        c.Image,
+			ImageID:      c.ImageID,
+			ContainerID:  c.ID.String(),
+		}
+		switch c.Status {
+		case kubecontainer.ContainerStateRunning:
+			cc.State.Running = &api.ContainerStateRunning{StartedAt: unversioned.NewTime(c.StartedAt)}
+		case kubecontainer.ContainerStateExited:
+			cc.State.Terminated = &api.ContainerStateTerminated{
+				ExitCode:    c.ExitCode,
+				Reason:      c.Reason,
+				Message:     c.Message,
+				StartedAt:   unversioned.NewTime(c.StartedAt),
+				FinishedAt:  unversioned.NewTime(c.FinishedAt),
+				ContainerID: c.ID.String(),
+			}
+		default:
+			cc.State.Waiting = &api.ContainerStateWaiting{}
+		}
+		// The pod is already the latest pod.
+		cc.LastTerminationState = cc.State
+		podStatus.ContainerStatuses = append(podStatus.ContainerStatuses, cc)
+	}
+	return podStatus, nil
 }
