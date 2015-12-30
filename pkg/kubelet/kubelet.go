@@ -2625,7 +2625,11 @@ func (kl *Kubelet) reconcileCBR0(podCIDR string) error {
 		glog.V(5).Info("Shaper is nil, creating")
 		kl.shaper = bandwidth.NewTCShaper("cbr0")
 	}
-	return kl.shaper.ReconcileInterface()
+	if err := kl.shaper.ReconcileInterface(); err != nil {
+		return err
+	}
+
+	return rkt.WriteBridgeNetConfig("cbr0", cidr)
 }
 
 // updateNodeStatus updates node status to master with retries.
