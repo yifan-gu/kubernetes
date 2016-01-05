@@ -155,6 +155,7 @@ kube-api-burst
 kube-api-qps
 kubectl-path
 kubelet-address
+kubelet-service-name
 kubelet-cadvisor-port
 kubelet-certificate-authority
 kubelet-client-certificate

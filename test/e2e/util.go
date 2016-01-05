@@ -127,6 +127,10 @@ type CloudConfig struct {
 	ServiceAccount    string
 
 	Provider cloudprovider.Interface
+
+	// The name of the Kubelet service when it's running as a systemd
+	// service on distros like CoreOS.
+	KubeletServiceName string
 }
 
 // unique identifier of the e2e run

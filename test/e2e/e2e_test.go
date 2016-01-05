@@ -80,6 +80,7 @@ func init() {
 	flag.StringVar(&cloudConfig.Cluster, "gke-cluster", "", "GKE name of cluster being used, if applicable")
 	flag.StringVar(&cloudConfig.NodeInstanceGroup, "node-instance-group", "", "Name of the managed instance group for nodes. Valid only for gce, gke or aws")
 	flag.IntVar(&cloudConfig.NumNodes, "num-nodes", -1, "Number of nodes in the cluster")
+	flag.StringVar(&cloudConfig.KubeletServiceName, "kubelet-service-name", "", "If non-empty, then the framework will assume the Kubelet is running as a systemd service, and will gather the Kubelet logs from journald")
 
 	flag.StringVar(&cloudConfig.ClusterTag, "cluster-tag", "", "Tag used to identify resources.  Only required if provider is aws.")
 	flag.IntVar(&testContext.MinStartupPods, "minStartupPods", 0, "The number of pods which we need to see in 'Running' state with a 'Ready' condition of true, before we try running tests. This is useful in any cluster which needs some base pod-based services running before it can be used.")
@@ -123,7 +124,6 @@ func TestE2E(t *testing.T) {
 		if err != nil {
 			glog.Fatal("Error building GCE provider: ", err)
 		}
-
 	}
 
 	if testContext.Provider == "aws" {

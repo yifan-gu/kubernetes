@@ -36,6 +36,7 @@ func CoreDump(dir string) {
 		return
 	}
 	provider := testContext.Provider
+	kubeletService := testContext.CloudConfig.KubeletServiceName
 
 	// requires ssh
 	if !providerIs(providersWithSSH...) {
@@ -50,10 +51,14 @@ func CoreDump(dir string) {
 		return
 	}
 
-	cmds := []command{
-		{"cat /var/log/kubelet.log", "kubelet"},
-		{"cat /var/log/kube-proxy.log", "kube-proxy"},
-		{"cat /var/log/supervisor/supervisord.log", "supervisord"},
+	cmds := []command{{"cat /var/log/kube-proxy.log", "kube-proxy"}}
+	if kubeletService != "" {
+		cmds = append(cmds, command{fmt.Sprintf("sudo journalctl --output=cat -u %s", kubeletService), "kubelet"})
+	} else {
+		cmds = append(cmds, []command{
+			{"cat /var/log/kubelet.log", "kubelet"},
+			{"cat /var/log/supervisor/supervisord.log", "supervisord"},
+		}...)
 	}
 	logCore(cmds, hosts, dir, provider)
 
@@ -65,11 +70,17 @@ func CoreDump(dir string) {
 	ix := strings.LastIndex(config.Host, "/")
 	master := net.JoinHostPort(config.Host[ix+1:], "22")
 	cmds = []command{
-		{"cat /var/log/kubelet.log", "kubelet"},
 		{"cat /var/log/kube-apiserver.log", "kube-apiserver"},
 		{"cat /var/log/kube-scheduler.log", "kube-scheduler"},
 		{"cat /var/log/kube-controller-manager.log", "kube-controller-manager"},
-		{"cat /var/log/supervisor/supervisord.log", "supervisord"},
+	}
+	if kubeletService != "" {
+		cmds = append(cmds, command{fmt.Sprintf("sudo journalctl --output=cat -u %s", kubeletService), "kubelet"})
+	} else {
+		cmds = append(cmds, []command{
+			{"cat /var/log/kubelet.log", "kubelet"},
+			{"cat /var/log/supervisor/supervisord.log", "supervisord"},
+		}...)
 	}
 	logCore(cmds, []string{master}, dir, provider)
 }
