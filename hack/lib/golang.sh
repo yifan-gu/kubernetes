@@ -50,7 +50,6 @@ readonly KUBE_SERVER_BINARIES=("${KUBE_SERVER_TARGETS[@]##*/}")
 # The server platform we are building on.
 readonly KUBE_SERVER_PLATFORMS=(
   linux/amd64
-  linux/arm
 )
 
 # The set of client targets that we are building for all platforms
@@ -64,12 +63,6 @@ readonly KUBE_CLIENT_BINARIES_WIN=("${KUBE_CLIENT_BINARIES[@]/%/.exe}")
 # in 'build/build-image/cross/Dockerfile'. However, it's only a bit faster since go 1.5, not mandatory 
 readonly KUBE_CLIENT_PLATFORMS=(
   linux/amd64
-  linux/386
-  linux/arm
-  darwin/amd64
-  darwin/386
-  windows/amd64
-  windows/386
 )
 
 # The set of test targets that we are building for all platforms
@@ -111,8 +104,6 @@ readonly KUBE_TEST_PORTABLE=(
 # Which platforms we should compile test targets for. Not all client platforms need these tests
 readonly KUBE_TEST_PLATFORMS=(
   linux/amd64
-  darwin/amd64
-  windows/amd64
 )
 
 # Gigabytes desired for parallel platform builds. 11 is fairly
