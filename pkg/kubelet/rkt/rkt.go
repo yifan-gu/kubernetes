@@ -81,7 +81,7 @@ const (
 	k8sRktCreationTimeAnno           = "rkt.kubernetes.io/created"
 	k8sRktContainerHashAnno          = "rkt.kubernetes.io/containerhash"
 	k8sRktRestartCountAnno           = "rkt.kubernetes.io/restartcount"
-	k8sRktTerminationMessagePathAnno = "rkt.kubernetes.io/terminationMessagePath"
+	k8sRktTerminationMessagePathAnno = "rkt.kubernetes.io/termination-message-path"
 	dockerPrefix                     = "docker://"
 
 	authDir            = "auth.d"
@@ -1099,7 +1099,7 @@ func (r *Runtime) SyncPod(pod *api.Pod, podStatus api.PodStatus, internalPodStat
 
 		c := runningPod.FindContainerByName(container.Name)
 		if c == nil {
-			if kubecontainer.ShouldContainerBeRestartedOldVersion(&container, pod, &podStatus) {
+			if kubecontainer.ShouldContainerBeRestarted(&container, pod, internalPodStatus) {
 				glog.V(3).Infof("Container %+v is dead, but RestartPolicy says that we should restart it.", container)
 				// TODO(yifan): Containers in one pod are fate-sharing at this moment, see:
 				// https://github.com/appc/spec/issues/276.
