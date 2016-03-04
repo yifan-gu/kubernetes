@@ -27,6 +27,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -41,11 +42,14 @@ import (
 	"k8s.io/kubernetes/pkg/client/record"
 	"k8s.io/kubernetes/pkg/credentialprovider"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
+	"k8s.io/kubernetes/pkg/kubelet/lifecycle"
 	proberesults "k8s.io/kubernetes/pkg/kubelet/prober/results"
+	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
 	"k8s.io/kubernetes/pkg/securitycontext"
 	"k8s.io/kubernetes/pkg/types"
 	"k8s.io/kubernetes/pkg/util"
+	"k8s.io/kubernetes/pkg/util/errors"
 	utilexec "k8s.io/kubernetes/pkg/util/exec"
 	"k8s.io/kubernetes/pkg/util/sets"
 	utilstrings "k8s.io/kubernetes/pkg/util/strings"
@@ -94,6 +98,12 @@ const (
 	// hence, setting ndots to be 5.
 	// TODO(yifan): Move this and dockertools.ndotsDNSOption to a common package.
 	defaultDNSOption = "ndots:5"
+
+	minimumGracePeriodInSeconds = 2
+)
+
+const (
+	hookTypePreStop string = "pre-stop"
 )
 
 // Runtime implements the Containerruntime for rkt. The implementation
@@ -116,6 +126,7 @@ type Runtime struct {
 	livenessManager     proberesults.Manager
 	volumeGetter        volumeGetter
 	imagePuller         kubecontainer.ImagePuller
+	runner              kubecontainer.HandlerRunner
 
 	// Versions
 	binVersion     rktVersion
@@ -140,6 +151,7 @@ func New(config *Config,
 	containerRefManager *kubecontainer.RefManager,
 	livenessManager proberesults.Manager,
 	volumeGetter volumeGetter,
+	httpClient kubetypes.HttpGetter,
 	imageBackOff *util.Backoff,
 	serializeImagePulls bool,
 ) (*Runtime, error) {
@@ -178,6 +190,9 @@ func New(config *Config,
 		livenessManager:     livenessManager,
 		volumeGetter:        volumeGetter,
 	}
+
+	rkt.runner = lifecycle.NewHandlerRunner(httpClient, rkt, rkt)
+
 	if serializeImagePulls {
 		rkt.imagePuller = kubecontainer.NewSerializedImagePuller(recorder, rkt, imageBackOff)
 	} else {
@@ -916,6 +931,47 @@ func (r *Runtime) RunPod(pod *api.Pod, pullSecrets []api.Secret) error {
 	return nil
 }
 
+func (r *Runtime) runLifecycleHooks(pod *api.Pod, runtimePod *kubecontainer.Pod, hookType string) error {
+	var wg sync.WaitGroup
+	var errlist []error
+	var hook *api.Handler
+	errCh := make(chan error, len(pod.Spec.Containers))
+
+	wg.Add(len(pod.Spec.Containers))
+
+	for i, c := range pod.Spec.Containers {
+		switch hookType {
+		case hookTypePreStop:
+			if c.Lifecycle != nil {
+				hook = c.Lifecycle.PreStop
+			}
+		default:
+			return fmt.Errorf("Unsupported hook type: %q, only support %q", hookType, hookTypePreStop)
+		}
+
+		if hook == nil {
+			wg.Done()
+			continue
+		}
+
+		go func(id kubecontainer.ContainerID, c *api.Container, hook *api.Handler) {
+			if err := r.runner.Run(id, pod, c, hook); err != nil {
+				glog.Errorf("rkt: Failed to run %q hook for container %q of pod %q: %v", hookType, c.Name, format.Pod(pod), err)
+				errCh <- err
+			}
+			wg.Done()
+		}(runtimePod.Containers[i].ID, &pod.Spec.Containers[i], hook)
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		errlist = append(errlist, err)
+	}
+	return errors.NewAggregate(errlist)
+}
+
 // convertRktPod will convert a rktapi.Pod to a kubecontainer.Pod
 func (r *Runtime) convertRktPod(rktpod *rktapi.Pod) (*kubecontainer.Pod, error) {
 	manifest := &appcschema.PodManifest{}
@@ -1016,10 +1072,42 @@ func (r *Runtime) GetPods(all bool) ([]*kubecontainer.Pod, error) {
 	return pods, nil
 }
 
+func (r *Runtime) waitPreStopHooks(pod *api.Pod, runningPod *kubecontainer.Pod) {
+	gracePeriod := int64(minimumGracePeriodInSeconds)
+	if pod != nil {
+		switch {
+		case pod.DeletionGracePeriodSeconds != nil:
+			gracePeriod = *pod.DeletionGracePeriodSeconds
+		case pod.Spec.TerminationGracePeriodSeconds != nil:
+			gracePeriod = *pod.Spec.TerminationGracePeriodSeconds
+		}
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		if err := r.runLifecycleHooks(pod, runningPod, hookTypePreStop); err != nil {
+			errCh <- err
+		}
+		close(errCh)
+	}()
+
+	select {
+	case <-time.After(time.Duration(gracePeriod) * time.Second):
+		glog.V(2).Infof("rkt: Some pre-stop hooks did not complete in %d seconds for pod %v", gracePeriod, format.Pod(pod))
+	case err := <-errCh:
+		if err != nil {
+			glog.Errorf("rkt: Some pre-stop hooks failed for pod %v: %v", format.Pod(pod), err)
+		} else {
+			glog.V(4).Infof("rkt: pre-stop hooks for pod %v completed", format.Pod(pod))
+		}
+	}
+}
+
 // KillPod invokes 'systemctl kill' to kill the unit that runs the pod.
-// TODO(yifan): Handle network plugin.
 func (r *Runtime) KillPod(pod *api.Pod, runningPod kubecontainer.Pod) error {
 	glog.V(4).Infof("Rkt is killing pod: name %q.", runningPod.Name)
+
+	r.waitPreStopHooks(pod, &runningPod)
 
 	serviceName := makePodServiceFileName(runningPod.ID)
 	r.generateEvents(&runningPod, "Killing", nil)
