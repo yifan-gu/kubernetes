@@ -55,8 +55,8 @@ const (
 	RktType = "rkt"
 
 	minimumAppcVersion       = "0.7.4"
-	minimumRktBinVersion     = "0.13.0"
-	recommendedRktBinVersion = "0.13.0"
+	minimumRktBinVersion     = "1.2.0"
+	recommendedRktBinVersion = "1.2.0"
 	minimumRktApiVersion     = "1.0.0-alpha"
 	minimumSystemdVersion    = "219"
 
