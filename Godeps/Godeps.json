@@ -1,6 +1,7 @@
 {
 	"ImportPath": "k8s.io/kubernetes",
 	"GoVersion": "go1.5",
+	"GodepVersion": "v60",
 	"Packages": [
 		"./..."
 	],
@@ -371,8 +372,8 @@
 		},
 		{
 			"ImportPath": "github.com/coreos/rkt/api/v1alpha",
-			"Comment": "v1.0.0",
-			"Rev": "1ddc36601c8688ff207210bc9ecbf973d09573fa"
+			"Comment": "v1.2.0-11-g32b2423",
+			"Rev": "32b2423dd26f945fa7bb21c871d21d3d0b691eac"
 		},
 		{
 			"ImportPath": "github.com/cpuguy83/go-md2man/md2man",
