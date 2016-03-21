@@ -1,7 +1,13 @@
 #cloud-config
 
 coreos:
+  update:
+    reboot-strategy: off
   units:
+    - name: update-engine.service
+      command: stop
+    - name: locksmithd.service
+      command: stop
     - name: kube-env.service
       command: start
       content: |
@@ -19,26 +25,6 @@ coreos:
         # Transform the yaml to env file.
         ExecStartPre=/usr/bin/mv /etc/kube-env.yaml /etc/kube-env
         ExecStart=/usr/bin/sed -i "s/: '/=/;s/'$//" /etc/kube-env
-
-    - name: kubernetes-install-rkt.service
-      command: start
-      content: |
-        [Unit]
-        Description=Fetch rkt
-        Documentation=http://github.com/coreos/rkt
-        Requires=network-online.target
-        After=network-online.target
-        Requires=kube-env.service
-        After=kube-env.service
-        [Service]
-        Type=oneshot
-        RemainAfterExit=yes
-        EnvironmentFile=/etc/kube-env
-        ExecStartPre=/usr/bin/mkdir -p /etc/rkt
-        ExecStartPre=/usr/bin/mkdir -p /opt/downloads
-        ExecStartPre=/usr/bin/curl --fail --silent --show-error --location --create-dirs --output \
-        /opt/downloads/rkt.tar.gz https://github.com/coreos/rkt/releases/download/v${RKT_VERSION}/rkt-v${RKT_VERSION}.tar.gz
-        ExecStart=/usr/bin/tar xf /opt/downloads/rkt.tar.gz -C /opt --overwrite
 
     - name: kubernetes-download-salt.service
       command: start
@@ -127,12 +113,13 @@ coreos:
         --cluster-dns=${DNS_SERVER_IP} \
         --cluster-domain=${DNS_DOMAIN} \
         --logtostderr=true \
-        --container-runtime=${KUBERNETES_CONTAINER_RUNTIME} \
-        --rkt-path=/opt/rkt-v${RKT_VERSON}/rkt \
-        --configure-cbr0=${KUBERNETES_CONFIGURE_CBR0} \
+        --container-runtime=docker \
+        --rkt-path=/opt/rkt/rkt \
+        --configure-cbr0=true \
         --pod-cidr=${MASTER_IP_RANGE} \
         --register-schedulable=false \
-        --reconcile-cidr=false
+        --reconcile-cidr=false \
+        --hairpin-mode=none
         Restart=always
         RestartSec=10
         
@@ -157,8 +144,6 @@ coreos:
         Description=Configure Node For Kubernetes service
         Requires=kubernetes-install-node.service
         After=kubernetes-install-node.service
-        Requires=kubernetes-install-rkt.service
-        After=kubernetes-install-rkt.service
         Requires=kubernetes-download-salt.service
         After=kubernetes-download-salt.service
         Requires=kubernetes-download-manifests.service
