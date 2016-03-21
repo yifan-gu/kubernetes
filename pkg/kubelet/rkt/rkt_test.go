@@ -1044,6 +1044,9 @@ func TestGenerateRunCommand(t *testing.T) {
 		// Case #0, returns error.
 		{
 			&api.Pod{
+				ObjectMeta: api.ObjectMeta{
+					Name: "pod-name-foo",
+				},
 				Spec: api.PodSpec{},
 			},
 			"rkt-uuid-foo",
@@ -1054,16 +1057,23 @@ func TestGenerateRunCommand(t *testing.T) {
 		},
 		// Case #1, returns no dns, with private-net.
 		{
-			&api.Pod{},
+			&api.Pod{
+				ObjectMeta: api.ObjectMeta{
+					Name: "pod-name-foo",
+				},
+			},
 			"rkt-uuid-foo",
 			[]string{},
 			[]string{},
 			nil,
-			"/bin/rkt/rkt --debug=false --insecure-options=image,ondisk --local-config=/var/rkt/local/data --dir=/var/data run-prepared --net=rkt.kubernetes.io rkt-uuid-foo",
+			"/bin/rkt/rkt --insecure-options=image,ondisk --local-config=/var/rkt/local/data --dir=/var/data run-prepared --net=rkt.kubernetes.io --hostname=pod-name-foo rkt-uuid-foo",
 		},
 		// Case #2, returns no dns, with host-net.
 		{
 			&api.Pod{
+				ObjectMeta: api.ObjectMeta{
+					Name: "pod-name-foo",
+				},
 				Spec: api.PodSpec{
 					SecurityContext: &api.PodSecurityContext{
 						HostNetwork: true,
@@ -1074,11 +1084,14 @@ func TestGenerateRunCommand(t *testing.T) {
 			[]string{},
 			[]string{},
 			nil,
-			"/bin/rkt/rkt --debug=false --insecure-options=image,ondisk --local-config=/var/rkt/local/data --dir=/var/data run-prepared --net=host rkt-uuid-foo",
+			"/bin/rkt/rkt --insecure-options=image,ondisk --local-config=/var/rkt/local/data --dir=/var/data run-prepared --net=host --hostname=pod-name-foo rkt-uuid-foo",
 		},
 		// Case #3, returns dns, dns searches, with private-net.
 		{
 			&api.Pod{
+				ObjectMeta: api.ObjectMeta{
+					Name: "pod-name-foo",
+				},
 				Spec: api.PodSpec{
 					SecurityContext: &api.PodSecurityContext{
 						HostNetwork: false,
@@ -1089,11 +1102,14 @@ func TestGenerateRunCommand(t *testing.T) {
 			[]string{"127.0.0.1"},
 			[]string{"."},
 			nil,
-			"/bin/rkt/rkt --debug=false --insecure-options=image,ondisk --local-config=/var/rkt/local/data --dir=/var/data run-prepared --net=rkt.kubernetes.io --dns=127.0.0.1 --dns-search=. --dns-opt=ndots:5 rkt-uuid-foo",
+			"/bin/rkt/rkt --insecure-options=image,ondisk --local-config=/var/rkt/local/data --dir=/var/data run-prepared --net=rkt.kubernetes.io --dns=127.0.0.1 --dns-search=. --dns-opt=ndots:5 --hostname=pod-name-foo rkt-uuid-foo",
 		},
 		// Case #4, returns dns, dns searches, with host-network.
 		{
 			&api.Pod{
+				ObjectMeta: api.ObjectMeta{
+					Name: "pod-name-foo",
+				},
 				Spec: api.PodSpec{
 					SecurityContext: &api.PodSecurityContext{
 						HostNetwork: true,
@@ -1104,7 +1120,7 @@ func TestGenerateRunCommand(t *testing.T) {
 			[]string{"127.0.0.1"},
 			[]string{"."},
 			nil,
-			"/bin/rkt/rkt --debug=false --insecure-options=image,ondisk --local-config=/var/rkt/local/data --dir=/var/data run-prepared --net=host --dns=127.0.0.1 --dns-search=. --dns-opt=ndots:5 rkt-uuid-foo",
+			"/bin/rkt/rkt --insecure-options=image,ondisk --local-config=/var/rkt/local/data --dir=/var/data run-prepared --net=host --dns=127.0.0.1 --dns-search=. --dns-opt=ndots:5 --hostname=pod-name-foo rkt-uuid-foo",
 		},
 	}
 
