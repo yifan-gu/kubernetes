@@ -15,6 +15,8 @@ base:
     - docker
 {% if pillar.get('network_provider', '').lower() == 'flannel' %}
     - flannel
+{% elif pillar.get('network_provider', '').lower() == 'kubenet' %}
+    - cni
 {% endif %}
     - helpers
     - cadvisor
@@ -46,12 +48,14 @@ base:
 {% if pillar.get('network_provider', '').lower() == 'flannel' %}
     - flannel-server
     - flannel
+{% elif pillar.get('network_provider', '').lower() == 'kubenet' %}
+    - cni
 {% endif %}
     - kube-apiserver
     - kube-controller-manager
     - kube-scheduler
     - supervisor
-{% if grains['cloud'] is defined and not grains.cloud in [ 'aws', 'gce', 'vagrant' ] %}
+{% if grains['cloud'] is defined and not grains.cloud in [ 'aws', 'gce', 'vagrant', 'vsphere'] %}
     - nginx
 {% endif %}
     - cadvisor
@@ -69,7 +73,7 @@ base:
     - logrotate
 {% endif %}
     - kube-addons
-{% if grains['cloud'] is defined and grains['cloud'] in [ 'vagrant', 'gce', 'aws' ] %}
+{% if grains['cloud'] is defined and grains['cloud'] in [ 'vagrant', 'gce', 'aws', 'vsphere' ] %}
     - docker
     - kubelet
 {% endif %}

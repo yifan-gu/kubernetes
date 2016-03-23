@@ -83,6 +83,7 @@ func autoConvert_api_CephFSVolumeSource_To_v1_CephFSVolumeSource(in *api.CephFSV
 	} else {
 		out.Monitors = nil
 	}
+	out.Path = in.Path
 	out.User = in.User
 	out.SecretFile = in.SecretFile
 	// unable to generate simple pointer conversion for api.LocalObjectReference -> v1.LocalObjectReference
@@ -114,6 +115,21 @@ func autoConvert_api_CinderVolumeSource_To_v1_CinderVolumeSource(in *api.CinderV
 
 func Convert_api_CinderVolumeSource_To_v1_CinderVolumeSource(in *api.CinderVolumeSource, out *v1.CinderVolumeSource, s conversion.Scope) error {
 	return autoConvert_api_CinderVolumeSource_To_v1_CinderVolumeSource(in, out, s)
+}
+
+func autoConvert_api_ConfigMapKeySelector_To_v1_ConfigMapKeySelector(in *api.ConfigMapKeySelector, out *v1.ConfigMapKeySelector, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*api.ConfigMapKeySelector))(in)
+	}
+	if err := Convert_api_LocalObjectReference_To_v1_LocalObjectReference(&in.LocalObjectReference, &out.LocalObjectReference, s); err != nil {
+		return err
+	}
+	out.Key = in.Key
+	return nil
+}
+
+func Convert_api_ConfigMapKeySelector_To_v1_ConfigMapKeySelector(in *api.ConfigMapKeySelector, out *v1.ConfigMapKeySelector, s conversion.Scope) error {
+	return autoConvert_api_ConfigMapKeySelector_To_v1_ConfigMapKeySelector(in, out, s)
 }
 
 func autoConvert_api_Container_To_v1_Container(in *api.Container, out *v1.Container, s conversion.Scope) error {
@@ -319,6 +335,24 @@ func autoConvert_api_EnvVarSource_To_v1_EnvVarSource(in *api.EnvVarSource, out *
 	} else {
 		out.FieldRef = nil
 	}
+	// unable to generate simple pointer conversion for api.ConfigMapKeySelector -> v1.ConfigMapKeySelector
+	if in.ConfigMapKeyRef != nil {
+		out.ConfigMapKeyRef = new(v1.ConfigMapKeySelector)
+		if err := Convert_api_ConfigMapKeySelector_To_v1_ConfigMapKeySelector(in.ConfigMapKeyRef, out.ConfigMapKeyRef, s); err != nil {
+			return err
+		}
+	} else {
+		out.ConfigMapKeyRef = nil
+	}
+	// unable to generate simple pointer conversion for api.SecretKeySelector -> v1.SecretKeySelector
+	if in.SecretKeyRef != nil {
+		out.SecretKeyRef = new(v1.SecretKeySelector)
+		if err := Convert_api_SecretKeySelector_To_v1_SecretKeySelector(in.SecretKeyRef, out.SecretKeyRef, s); err != nil {
+			return err
+		}
+	} else {
+		out.SecretKeyRef = nil
+	}
 	return nil
 }
 
@@ -468,11 +502,34 @@ func autoConvert_api_HTTPGetAction_To_v1_HTTPGetAction(in *api.HTTPGetAction, ou
 	}
 	out.Host = in.Host
 	out.Scheme = v1.URIScheme(in.Scheme)
+	if in.HTTPHeaders != nil {
+		out.HTTPHeaders = make([]v1.HTTPHeader, len(in.HTTPHeaders))
+		for i := range in.HTTPHeaders {
+			if err := Convert_api_HTTPHeader_To_v1_HTTPHeader(&in.HTTPHeaders[i], &out.HTTPHeaders[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.HTTPHeaders = nil
+	}
 	return nil
 }
 
 func Convert_api_HTTPGetAction_To_v1_HTTPGetAction(in *api.HTTPGetAction, out *v1.HTTPGetAction, s conversion.Scope) error {
 	return autoConvert_api_HTTPGetAction_To_v1_HTTPGetAction(in, out, s)
+}
+
+func autoConvert_api_HTTPHeader_To_v1_HTTPHeader(in *api.HTTPHeader, out *v1.HTTPHeader, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*api.HTTPHeader))(in)
+	}
+	out.Name = in.Name
+	out.Value = in.Value
+	return nil
+}
+
+func Convert_api_HTTPHeader_To_v1_HTTPHeader(in *api.HTTPHeader, out *v1.HTTPHeader, s conversion.Scope) error {
+	return autoConvert_api_HTTPHeader_To_v1_HTTPHeader(in, out, s)
 }
 
 func autoConvert_api_Handler_To_v1_Handler(in *api.Handler, out *v1.Handler, s conversion.Scope) error {
@@ -926,6 +983,21 @@ func Convert_api_SELinuxOptions_To_v1_SELinuxOptions(in *api.SELinuxOptions, out
 	return autoConvert_api_SELinuxOptions_To_v1_SELinuxOptions(in, out, s)
 }
 
+func autoConvert_api_SecretKeySelector_To_v1_SecretKeySelector(in *api.SecretKeySelector, out *v1.SecretKeySelector, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*api.SecretKeySelector))(in)
+	}
+	if err := Convert_api_LocalObjectReference_To_v1_LocalObjectReference(&in.LocalObjectReference, &out.LocalObjectReference, s); err != nil {
+		return err
+	}
+	out.Key = in.Key
+	return nil
+}
+
+func Convert_api_SecretKeySelector_To_v1_SecretKeySelector(in *api.SecretKeySelector, out *v1.SecretKeySelector, s conversion.Scope) error {
+	return autoConvert_api_SecretKeySelector_To_v1_SecretKeySelector(in, out, s)
+}
+
 func autoConvert_api_SecretVolumeSource_To_v1_SecretVolumeSource(in *api.SecretVolumeSource, out *v1.SecretVolumeSource, s conversion.Scope) error {
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
 		defaulting.(func(*api.SecretVolumeSource))(in)
@@ -1192,6 +1264,56 @@ func Convert_api_VolumeSource_To_v1_VolumeSource(in *api.VolumeSource, out *v1.V
 	return autoConvert_api_VolumeSource_To_v1_VolumeSource(in, out, s)
 }
 
+func autoConvert_unversioned_LabelSelector_To_v1beta1_LabelSelector(in *unversioned.LabelSelector, out *LabelSelector, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*unversioned.LabelSelector))(in)
+	}
+	if in.MatchLabels != nil {
+		out.MatchLabels = make(map[string]string)
+		for key, val := range in.MatchLabels {
+			out.MatchLabels[key] = val
+		}
+	} else {
+		out.MatchLabels = nil
+	}
+	if in.MatchExpressions != nil {
+		out.MatchExpressions = make([]LabelSelectorRequirement, len(in.MatchExpressions))
+		for i := range in.MatchExpressions {
+			if err := Convert_unversioned_LabelSelectorRequirement_To_v1beta1_LabelSelectorRequirement(&in.MatchExpressions[i], &out.MatchExpressions[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.MatchExpressions = nil
+	}
+	return nil
+}
+
+func Convert_unversioned_LabelSelector_To_v1beta1_LabelSelector(in *unversioned.LabelSelector, out *LabelSelector, s conversion.Scope) error {
+	return autoConvert_unversioned_LabelSelector_To_v1beta1_LabelSelector(in, out, s)
+}
+
+func autoConvert_unversioned_LabelSelectorRequirement_To_v1beta1_LabelSelectorRequirement(in *unversioned.LabelSelectorRequirement, out *LabelSelectorRequirement, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*unversioned.LabelSelectorRequirement))(in)
+	}
+	out.Key = in.Key
+	out.Operator = LabelSelectorOperator(in.Operator)
+	if in.Values != nil {
+		out.Values = make([]string, len(in.Values))
+		for i := range in.Values {
+			out.Values[i] = in.Values[i]
+		}
+	} else {
+		out.Values = nil
+	}
+	return nil
+}
+
+func Convert_unversioned_LabelSelectorRequirement_To_v1beta1_LabelSelectorRequirement(in *unversioned.LabelSelectorRequirement, out *LabelSelectorRequirement, s conversion.Scope) error {
+	return autoConvert_unversioned_LabelSelectorRequirement_To_v1beta1_LabelSelectorRequirement(in, out, s)
+}
+
 func autoConvert_v1_AWSElasticBlockStoreVolumeSource_To_api_AWSElasticBlockStoreVolumeSource(in *v1.AWSElasticBlockStoreVolumeSource, out *api.AWSElasticBlockStoreVolumeSource, s conversion.Scope) error {
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
 		defaulting.(func(*v1.AWSElasticBlockStoreVolumeSource))(in)
@@ -1246,6 +1368,7 @@ func autoConvert_v1_CephFSVolumeSource_To_api_CephFSVolumeSource(in *v1.CephFSVo
 	} else {
 		out.Monitors = nil
 	}
+	out.Path = in.Path
 	out.User = in.User
 	out.SecretFile = in.SecretFile
 	// unable to generate simple pointer conversion for v1.LocalObjectReference -> api.LocalObjectReference
@@ -1277,6 +1400,21 @@ func autoConvert_v1_CinderVolumeSource_To_api_CinderVolumeSource(in *v1.CinderVo
 
 func Convert_v1_CinderVolumeSource_To_api_CinderVolumeSource(in *v1.CinderVolumeSource, out *api.CinderVolumeSource, s conversion.Scope) error {
 	return autoConvert_v1_CinderVolumeSource_To_api_CinderVolumeSource(in, out, s)
+}
+
+func autoConvert_v1_ConfigMapKeySelector_To_api_ConfigMapKeySelector(in *v1.ConfigMapKeySelector, out *api.ConfigMapKeySelector, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*v1.ConfigMapKeySelector))(in)
+	}
+	if err := Convert_v1_LocalObjectReference_To_api_LocalObjectReference(&in.LocalObjectReference, &out.LocalObjectReference, s); err != nil {
+		return err
+	}
+	out.Key = in.Key
+	return nil
+}
+
+func Convert_v1_ConfigMapKeySelector_To_api_ConfigMapKeySelector(in *v1.ConfigMapKeySelector, out *api.ConfigMapKeySelector, s conversion.Scope) error {
+	return autoConvert_v1_ConfigMapKeySelector_To_api_ConfigMapKeySelector(in, out, s)
 }
 
 func autoConvert_v1_Container_To_api_Container(in *v1.Container, out *api.Container, s conversion.Scope) error {
@@ -1482,6 +1620,24 @@ func autoConvert_v1_EnvVarSource_To_api_EnvVarSource(in *v1.EnvVarSource, out *a
 	} else {
 		out.FieldRef = nil
 	}
+	// unable to generate simple pointer conversion for v1.ConfigMapKeySelector -> api.ConfigMapKeySelector
+	if in.ConfigMapKeyRef != nil {
+		out.ConfigMapKeyRef = new(api.ConfigMapKeySelector)
+		if err := Convert_v1_ConfigMapKeySelector_To_api_ConfigMapKeySelector(in.ConfigMapKeyRef, out.ConfigMapKeyRef, s); err != nil {
+			return err
+		}
+	} else {
+		out.ConfigMapKeyRef = nil
+	}
+	// unable to generate simple pointer conversion for v1.SecretKeySelector -> api.SecretKeySelector
+	if in.SecretKeyRef != nil {
+		out.SecretKeyRef = new(api.SecretKeySelector)
+		if err := Convert_v1_SecretKeySelector_To_api_SecretKeySelector(in.SecretKeyRef, out.SecretKeyRef, s); err != nil {
+			return err
+		}
+	} else {
+		out.SecretKeyRef = nil
+	}
 	return nil
 }
 
@@ -1631,11 +1787,34 @@ func autoConvert_v1_HTTPGetAction_To_api_HTTPGetAction(in *v1.HTTPGetAction, out
 	}
 	out.Host = in.Host
 	out.Scheme = api.URIScheme(in.Scheme)
+	if in.HTTPHeaders != nil {
+		out.HTTPHeaders = make([]api.HTTPHeader, len(in.HTTPHeaders))
+		for i := range in.HTTPHeaders {
+			if err := Convert_v1_HTTPHeader_To_api_HTTPHeader(&in.HTTPHeaders[i], &out.HTTPHeaders[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.HTTPHeaders = nil
+	}
 	return nil
 }
 
 func Convert_v1_HTTPGetAction_To_api_HTTPGetAction(in *v1.HTTPGetAction, out *api.HTTPGetAction, s conversion.Scope) error {
 	return autoConvert_v1_HTTPGetAction_To_api_HTTPGetAction(in, out, s)
+}
+
+func autoConvert_v1_HTTPHeader_To_api_HTTPHeader(in *v1.HTTPHeader, out *api.HTTPHeader, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*v1.HTTPHeader))(in)
+	}
+	out.Name = in.Name
+	out.Value = in.Value
+	return nil
+}
+
+func Convert_v1_HTTPHeader_To_api_HTTPHeader(in *v1.HTTPHeader, out *api.HTTPHeader, s conversion.Scope) error {
+	return autoConvert_v1_HTTPHeader_To_api_HTTPHeader(in, out, s)
 }
 
 func autoConvert_v1_Handler_To_api_Handler(in *v1.Handler, out *api.Handler, s conversion.Scope) error {
@@ -2065,6 +2244,21 @@ func Convert_v1_SELinuxOptions_To_api_SELinuxOptions(in *v1.SELinuxOptions, out 
 	return autoConvert_v1_SELinuxOptions_To_api_SELinuxOptions(in, out, s)
 }
 
+func autoConvert_v1_SecretKeySelector_To_api_SecretKeySelector(in *v1.SecretKeySelector, out *api.SecretKeySelector, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*v1.SecretKeySelector))(in)
+	}
+	if err := Convert_v1_LocalObjectReference_To_api_LocalObjectReference(&in.LocalObjectReference, &out.LocalObjectReference, s); err != nil {
+		return err
+	}
+	out.Key = in.Key
+	return nil
+}
+
+func Convert_v1_SecretKeySelector_To_api_SecretKeySelector(in *v1.SecretKeySelector, out *api.SecretKeySelector, s conversion.Scope) error {
+	return autoConvert_v1_SecretKeySelector_To_api_SecretKeySelector(in, out, s)
+}
+
 func autoConvert_v1_SecretVolumeSource_To_api_SecretVolumeSource(in *v1.SecretVolumeSource, out *api.SecretVolumeSource, s conversion.Scope) error {
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
 		defaulting.(func(*v1.SecretVolumeSource))(in)
@@ -2426,58 +2620,6 @@ func Convert_extensions_ClusterAutoscalerSpec_To_v1beta1_ClusterAutoscalerSpec(i
 	return autoConvert_extensions_ClusterAutoscalerSpec_To_v1beta1_ClusterAutoscalerSpec(in, out, s)
 }
 
-func autoConvert_extensions_ConfigMap_To_v1beta1_ConfigMap(in *extensions.ConfigMap, out *ConfigMap, s conversion.Scope) error {
-	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
-		defaulting.(func(*extensions.ConfigMap))(in)
-	}
-	if err := api.Convert_unversioned_TypeMeta_To_unversioned_TypeMeta(&in.TypeMeta, &out.TypeMeta, s); err != nil {
-		return err
-	}
-	if err := Convert_api_ObjectMeta_To_v1_ObjectMeta(&in.ObjectMeta, &out.ObjectMeta, s); err != nil {
-		return err
-	}
-	if in.Data != nil {
-		out.Data = make(map[string]string)
-		for key, val := range in.Data {
-			out.Data[key] = val
-		}
-	} else {
-		out.Data = nil
-	}
-	return nil
-}
-
-func Convert_extensions_ConfigMap_To_v1beta1_ConfigMap(in *extensions.ConfigMap, out *ConfigMap, s conversion.Scope) error {
-	return autoConvert_extensions_ConfigMap_To_v1beta1_ConfigMap(in, out, s)
-}
-
-func autoConvert_extensions_ConfigMapList_To_v1beta1_ConfigMapList(in *extensions.ConfigMapList, out *ConfigMapList, s conversion.Scope) error {
-	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
-		defaulting.(func(*extensions.ConfigMapList))(in)
-	}
-	if err := api.Convert_unversioned_TypeMeta_To_unversioned_TypeMeta(&in.TypeMeta, &out.TypeMeta, s); err != nil {
-		return err
-	}
-	if err := api.Convert_unversioned_ListMeta_To_unversioned_ListMeta(&in.ListMeta, &out.ListMeta, s); err != nil {
-		return err
-	}
-	if in.Items != nil {
-		out.Items = make([]ConfigMap, len(in.Items))
-		for i := range in.Items {
-			if err := Convert_extensions_ConfigMap_To_v1beta1_ConfigMap(&in.Items[i], &out.Items[i], s); err != nil {
-				return err
-			}
-		}
-	} else {
-		out.Items = nil
-	}
-	return nil
-}
-
-func Convert_extensions_ConfigMapList_To_v1beta1_ConfigMapList(in *extensions.ConfigMapList, out *ConfigMapList, s conversion.Scope) error {
-	return autoConvert_extensions_ConfigMapList_To_v1beta1_ConfigMapList(in, out, s)
-}
-
 func autoConvert_extensions_DaemonSet_To_v1beta1_DaemonSet(in *extensions.DaemonSet, out *DaemonSet, s conversion.Scope) error {
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
 		defaulting.(func(*extensions.DaemonSet))(in)
@@ -2532,29 +2674,25 @@ func autoConvert_extensions_DaemonSetSpec_To_v1beta1_DaemonSetSpec(in *extension
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
 		defaulting.(func(*extensions.DaemonSetSpec))(in)
 	}
-	// unable to generate simple pointer conversion for extensions.LabelSelector -> v1beta1.LabelSelector
+	// unable to generate simple pointer conversion for unversioned.LabelSelector -> v1beta1.LabelSelector
 	if in.Selector != nil {
 		out.Selector = new(LabelSelector)
-		if err := Convert_extensions_LabelSelector_To_v1beta1_LabelSelector(in.Selector, out.Selector, s); err != nil {
+		if err := Convert_unversioned_LabelSelector_To_v1beta1_LabelSelector(in.Selector, out.Selector, s); err != nil {
 			return err
 		}
 	} else {
 		out.Selector = nil
 	}
-	// unable to generate simple pointer conversion for api.PodTemplateSpec -> v1.PodTemplateSpec
-	if in.Template != nil {
-		out.Template = new(v1.PodTemplateSpec)
-		if err := Convert_api_PodTemplateSpec_To_v1_PodTemplateSpec(in.Template, out.Template, s); err != nil {
-			return err
-		}
-	} else {
-		out.Template = nil
+	if err := Convert_api_PodTemplateSpec_To_v1_PodTemplateSpec(&in.Template, &out.Template, s); err != nil {
+		return err
+	}
+	if err := Convert_extensions_DaemonSetUpdateStrategy_To_v1beta1_DaemonSetUpdateStrategy(&in.UpdateStrategy, &out.UpdateStrategy, s); err != nil {
+		return err
+	}
+	if err := api.Convert_string_To_string_ref(&in.UniqueLabelKey, &out.UniqueLabelKey, s); err != nil {
+		return err
 	}
 	return nil
-}
-
-func Convert_extensions_DaemonSetSpec_To_v1beta1_DaemonSetSpec(in *extensions.DaemonSetSpec, out *DaemonSetSpec, s conversion.Scope) error {
-	return autoConvert_extensions_DaemonSetSpec_To_v1beta1_DaemonSetSpec(in, out, s)
 }
 
 func autoConvert_extensions_DaemonSetStatus_To_v1beta1_DaemonSetStatus(in *extensions.DaemonSetStatus, out *DaemonSetStatus, s conversion.Scope) error {
@@ -2569,6 +2707,23 @@ func autoConvert_extensions_DaemonSetStatus_To_v1beta1_DaemonSetStatus(in *exten
 
 func Convert_extensions_DaemonSetStatus_To_v1beta1_DaemonSetStatus(in *extensions.DaemonSetStatus, out *DaemonSetStatus, s conversion.Scope) error {
 	return autoConvert_extensions_DaemonSetStatus_To_v1beta1_DaemonSetStatus(in, out, s)
+}
+
+func autoConvert_extensions_DaemonSetUpdateStrategy_To_v1beta1_DaemonSetUpdateStrategy(in *extensions.DaemonSetUpdateStrategy, out *DaemonSetUpdateStrategy, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*extensions.DaemonSetUpdateStrategy))(in)
+	}
+	out.Type = DaemonSetUpdateStrategyType(in.Type)
+	// unable to generate simple pointer conversion for extensions.RollingUpdateDaemonSet -> v1beta1.RollingUpdateDaemonSet
+	if in.RollingUpdate != nil {
+		out.RollingUpdate = new(RollingUpdateDaemonSet)
+		if err := Convert_extensions_RollingUpdateDaemonSet_To_v1beta1_RollingUpdateDaemonSet(in.RollingUpdate, out.RollingUpdate, s); err != nil {
+			return err
+		}
+	} else {
+		out.RollingUpdate = nil
+	}
+	return nil
 }
 
 func autoConvert_extensions_Deployment_To_v1beta1_Deployment(in *extensions.Deployment, out *Deployment, s conversion.Scope) error {
@@ -2621,6 +2776,32 @@ func Convert_extensions_DeploymentList_To_v1beta1_DeploymentList(in *extensions.
 	return autoConvert_extensions_DeploymentList_To_v1beta1_DeploymentList(in, out, s)
 }
 
+func autoConvert_extensions_DeploymentRollback_To_v1beta1_DeploymentRollback(in *extensions.DeploymentRollback, out *DeploymentRollback, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*extensions.DeploymentRollback))(in)
+	}
+	if err := api.Convert_unversioned_TypeMeta_To_unversioned_TypeMeta(&in.TypeMeta, &out.TypeMeta, s); err != nil {
+		return err
+	}
+	out.Name = in.Name
+	if in.UpdatedAnnotations != nil {
+		out.UpdatedAnnotations = make(map[string]string)
+		for key, val := range in.UpdatedAnnotations {
+			out.UpdatedAnnotations[key] = val
+		}
+	} else {
+		out.UpdatedAnnotations = nil
+	}
+	if err := Convert_extensions_RollbackConfig_To_v1beta1_RollbackConfig(&in.RollbackTo, &out.RollbackTo, s); err != nil {
+		return err
+	}
+	return nil
+}
+
+func Convert_extensions_DeploymentRollback_To_v1beta1_DeploymentRollback(in *extensions.DeploymentRollback, out *DeploymentRollback, s conversion.Scope) error {
+	return autoConvert_extensions_DeploymentRollback_To_v1beta1_DeploymentRollback(in, out, s)
+}
+
 func autoConvert_extensions_DeploymentSpec_To_v1beta1_DeploymentSpec(in *extensions.DeploymentSpec, out *DeploymentSpec, s conversion.Scope) error {
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
 		defaulting.(func(*extensions.DeploymentSpec))(in)
@@ -2642,8 +2823,22 @@ func autoConvert_extensions_DeploymentSpec_To_v1beta1_DeploymentSpec(in *extensi
 	if err := Convert_extensions_DeploymentStrategy_To_v1beta1_DeploymentStrategy(&in.Strategy, &out.Strategy, s); err != nil {
 		return err
 	}
-	if err := s.Convert(&in.UniqueLabelKey, &out.UniqueLabelKey, 0); err != nil {
-		return err
+	out.MinReadySeconds = int32(in.MinReadySeconds)
+	if in.RevisionHistoryLimit != nil {
+		out.RevisionHistoryLimit = new(int32)
+		*out.RevisionHistoryLimit = int32(*in.RevisionHistoryLimit)
+	} else {
+		out.RevisionHistoryLimit = nil
+	}
+	out.Paused = in.Paused
+	// unable to generate simple pointer conversion for extensions.RollbackConfig -> v1beta1.RollbackConfig
+	if in.RollbackTo != nil {
+		out.RollbackTo = new(RollbackConfig)
+		if err := Convert_extensions_RollbackConfig_To_v1beta1_RollbackConfig(in.RollbackTo, out.RollbackTo, s); err != nil {
+			return err
+		}
+	} else {
+		out.RollbackTo = nil
 	}
 	return nil
 }
@@ -2654,6 +2849,8 @@ func autoConvert_extensions_DeploymentStatus_To_v1beta1_DeploymentStatus(in *ext
 	}
 	out.Replicas = int32(in.Replicas)
 	out.UpdatedReplicas = int32(in.UpdatedReplicas)
+	out.AvailableReplicas = int32(in.AvailableReplicas)
+	out.UnavailableReplicas = int32(in.UnavailableReplicas)
 	return nil
 }
 
@@ -2828,6 +3025,32 @@ func Convert_extensions_HorizontalPodAutoscalerStatus_To_v1beta1_HorizontalPodAu
 	return autoConvert_extensions_HorizontalPodAutoscalerStatus_To_v1beta1_HorizontalPodAutoscalerStatus(in, out, s)
 }
 
+func autoConvert_extensions_HostPortRange_To_v1beta1_HostPortRange(in *extensions.HostPortRange, out *HostPortRange, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*extensions.HostPortRange))(in)
+	}
+	out.Min = int32(in.Min)
+	out.Max = int32(in.Max)
+	return nil
+}
+
+func Convert_extensions_HostPortRange_To_v1beta1_HostPortRange(in *extensions.HostPortRange, out *HostPortRange, s conversion.Scope) error {
+	return autoConvert_extensions_HostPortRange_To_v1beta1_HostPortRange(in, out, s)
+}
+
+func autoConvert_extensions_IDRange_To_v1beta1_IDRange(in *extensions.IDRange, out *IDRange, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*extensions.IDRange))(in)
+	}
+	out.Min = in.Min
+	out.Max = in.Max
+	return nil
+}
+
+func Convert_extensions_IDRange_To_v1beta1_IDRange(in *extensions.IDRange, out *IDRange, s conversion.Scope) error {
+	return autoConvert_extensions_IDRange_To_v1beta1_IDRange(in, out, s)
+}
+
 func autoConvert_extensions_Ingress_To_v1beta1_Ingress(in *extensions.Ingress, out *Ingress, s conversion.Scope) error {
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
 		defaulting.(func(*extensions.Ingress))(in)
@@ -2941,6 +3164,16 @@ func autoConvert_extensions_IngressSpec_To_v1beta1_IngressSpec(in *extensions.In
 	} else {
 		out.Backend = nil
 	}
+	if in.TLS != nil {
+		out.TLS = make([]IngressTLS, len(in.TLS))
+		for i := range in.TLS {
+			if err := Convert_extensions_IngressTLS_To_v1beta1_IngressTLS(&in.TLS[i], &out.TLS[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.TLS = nil
+	}
 	if in.Rules != nil {
 		out.Rules = make([]IngressRule, len(in.Rules))
 		for i := range in.Rules {
@@ -2970,6 +3203,26 @@ func autoConvert_extensions_IngressStatus_To_v1beta1_IngressStatus(in *extension
 
 func Convert_extensions_IngressStatus_To_v1beta1_IngressStatus(in *extensions.IngressStatus, out *IngressStatus, s conversion.Scope) error {
 	return autoConvert_extensions_IngressStatus_To_v1beta1_IngressStatus(in, out, s)
+}
+
+func autoConvert_extensions_IngressTLS_To_v1beta1_IngressTLS(in *extensions.IngressTLS, out *IngressTLS, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*extensions.IngressTLS))(in)
+	}
+	if in.Hosts != nil {
+		out.Hosts = make([]string, len(in.Hosts))
+		for i := range in.Hosts {
+			out.Hosts[i] = in.Hosts[i]
+		}
+	} else {
+		out.Hosts = nil
+	}
+	out.SecretName = in.SecretName
+	return nil
+}
+
+func Convert_extensions_IngressTLS_To_v1beta1_IngressTLS(in *extensions.IngressTLS, out *IngressTLS, s conversion.Scope) error {
+	return autoConvert_extensions_IngressTLS_To_v1beta1_IngressTLS(in, out, s)
 }
 
 func autoConvert_extensions_Job_To_v1beta1_Job(in *extensions.Job, out *Job, s conversion.Scope) error {
@@ -3065,10 +3318,10 @@ func autoConvert_extensions_JobSpec_To_v1beta1_JobSpec(in *extensions.JobSpec, o
 	} else {
 		out.ActiveDeadlineSeconds = nil
 	}
-	// unable to generate simple pointer conversion for extensions.LabelSelector -> v1beta1.LabelSelector
+	// unable to generate simple pointer conversion for unversioned.LabelSelector -> v1beta1.LabelSelector
 	if in.Selector != nil {
 		out.Selector = new(LabelSelector)
-		if err := Convert_extensions_LabelSelector_To_v1beta1_LabelSelector(in.Selector, out.Selector, s); err != nil {
+		if err := Convert_unversioned_LabelSelector_To_v1beta1_LabelSelector(in.Selector, out.Selector, s); err != nil {
 			return err
 		}
 	} else {
@@ -3126,56 +3379,6 @@ func Convert_extensions_JobStatus_To_v1beta1_JobStatus(in *extensions.JobStatus,
 	return autoConvert_extensions_JobStatus_To_v1beta1_JobStatus(in, out, s)
 }
 
-func autoConvert_extensions_LabelSelector_To_v1beta1_LabelSelector(in *extensions.LabelSelector, out *LabelSelector, s conversion.Scope) error {
-	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
-		defaulting.(func(*extensions.LabelSelector))(in)
-	}
-	if in.MatchLabels != nil {
-		out.MatchLabels = make(map[string]string)
-		for key, val := range in.MatchLabels {
-			out.MatchLabels[key] = val
-		}
-	} else {
-		out.MatchLabels = nil
-	}
-	if in.MatchExpressions != nil {
-		out.MatchExpressions = make([]LabelSelectorRequirement, len(in.MatchExpressions))
-		for i := range in.MatchExpressions {
-			if err := Convert_extensions_LabelSelectorRequirement_To_v1beta1_LabelSelectorRequirement(&in.MatchExpressions[i], &out.MatchExpressions[i], s); err != nil {
-				return err
-			}
-		}
-	} else {
-		out.MatchExpressions = nil
-	}
-	return nil
-}
-
-func Convert_extensions_LabelSelector_To_v1beta1_LabelSelector(in *extensions.LabelSelector, out *LabelSelector, s conversion.Scope) error {
-	return autoConvert_extensions_LabelSelector_To_v1beta1_LabelSelector(in, out, s)
-}
-
-func autoConvert_extensions_LabelSelectorRequirement_To_v1beta1_LabelSelectorRequirement(in *extensions.LabelSelectorRequirement, out *LabelSelectorRequirement, s conversion.Scope) error {
-	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
-		defaulting.(func(*extensions.LabelSelectorRequirement))(in)
-	}
-	out.Key = in.Key
-	out.Operator = LabelSelectorOperator(in.Operator)
-	if in.Values != nil {
-		out.Values = make([]string, len(in.Values))
-		for i := range in.Values {
-			out.Values[i] = in.Values[i]
-		}
-	} else {
-		out.Values = nil
-	}
-	return nil
-}
-
-func Convert_extensions_LabelSelectorRequirement_To_v1beta1_LabelSelectorRequirement(in *extensions.LabelSelectorRequirement, out *LabelSelectorRequirement, s conversion.Scope) error {
-	return autoConvert_extensions_LabelSelectorRequirement_To_v1beta1_LabelSelectorRequirement(in, out, s)
-}
-
 func autoConvert_extensions_NodeUtilization_To_v1beta1_NodeUtilization(in *extensions.NodeUtilization, out *NodeUtilization, s conversion.Scope) error {
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
 		defaulting.(func(*extensions.NodeUtilization))(in)
@@ -3187,6 +3390,191 @@ func autoConvert_extensions_NodeUtilization_To_v1beta1_NodeUtilization(in *exten
 
 func Convert_extensions_NodeUtilization_To_v1beta1_NodeUtilization(in *extensions.NodeUtilization, out *NodeUtilization, s conversion.Scope) error {
 	return autoConvert_extensions_NodeUtilization_To_v1beta1_NodeUtilization(in, out, s)
+}
+
+func autoConvert_extensions_PodSecurityPolicy_To_v1beta1_PodSecurityPolicy(in *extensions.PodSecurityPolicy, out *PodSecurityPolicy, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*extensions.PodSecurityPolicy))(in)
+	}
+	if err := api.Convert_unversioned_TypeMeta_To_unversioned_TypeMeta(&in.TypeMeta, &out.TypeMeta, s); err != nil {
+		return err
+	}
+	if err := Convert_api_ObjectMeta_To_v1_ObjectMeta(&in.ObjectMeta, &out.ObjectMeta, s); err != nil {
+		return err
+	}
+	if err := Convert_extensions_PodSecurityPolicySpec_To_v1beta1_PodSecurityPolicySpec(&in.Spec, &out.Spec, s); err != nil {
+		return err
+	}
+	return nil
+}
+
+func Convert_extensions_PodSecurityPolicy_To_v1beta1_PodSecurityPolicy(in *extensions.PodSecurityPolicy, out *PodSecurityPolicy, s conversion.Scope) error {
+	return autoConvert_extensions_PodSecurityPolicy_To_v1beta1_PodSecurityPolicy(in, out, s)
+}
+
+func autoConvert_extensions_PodSecurityPolicyList_To_v1beta1_PodSecurityPolicyList(in *extensions.PodSecurityPolicyList, out *PodSecurityPolicyList, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*extensions.PodSecurityPolicyList))(in)
+	}
+	if err := api.Convert_unversioned_TypeMeta_To_unversioned_TypeMeta(&in.TypeMeta, &out.TypeMeta, s); err != nil {
+		return err
+	}
+	if err := api.Convert_unversioned_ListMeta_To_unversioned_ListMeta(&in.ListMeta, &out.ListMeta, s); err != nil {
+		return err
+	}
+	if in.Items != nil {
+		out.Items = make([]PodSecurityPolicy, len(in.Items))
+		for i := range in.Items {
+			if err := Convert_extensions_PodSecurityPolicy_To_v1beta1_PodSecurityPolicy(&in.Items[i], &out.Items[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
+	return nil
+}
+
+func Convert_extensions_PodSecurityPolicyList_To_v1beta1_PodSecurityPolicyList(in *extensions.PodSecurityPolicyList, out *PodSecurityPolicyList, s conversion.Scope) error {
+	return autoConvert_extensions_PodSecurityPolicyList_To_v1beta1_PodSecurityPolicyList(in, out, s)
+}
+
+func autoConvert_extensions_PodSecurityPolicySpec_To_v1beta1_PodSecurityPolicySpec(in *extensions.PodSecurityPolicySpec, out *PodSecurityPolicySpec, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*extensions.PodSecurityPolicySpec))(in)
+	}
+	out.Privileged = in.Privileged
+	if in.Capabilities != nil {
+		out.Capabilities = make([]v1.Capability, len(in.Capabilities))
+		for i := range in.Capabilities {
+			out.Capabilities[i] = v1.Capability(in.Capabilities[i])
+		}
+	} else {
+		out.Capabilities = nil
+	}
+	if in.Volumes != nil {
+		out.Volumes = make([]FSType, len(in.Volumes))
+		for i := range in.Volumes {
+			out.Volumes[i] = FSType(in.Volumes[i])
+		}
+	} else {
+		out.Volumes = nil
+	}
+	out.HostNetwork = in.HostNetwork
+	if in.HostPorts != nil {
+		out.HostPorts = make([]HostPortRange, len(in.HostPorts))
+		for i := range in.HostPorts {
+			if err := Convert_extensions_HostPortRange_To_v1beta1_HostPortRange(&in.HostPorts[i], &out.HostPorts[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.HostPorts = nil
+	}
+	out.HostPID = in.HostPID
+	out.HostIPC = in.HostIPC
+	if err := Convert_extensions_SELinuxContextStrategyOptions_To_v1beta1_SELinuxContextStrategyOptions(&in.SELinuxContext, &out.SELinuxContext, s); err != nil {
+		return err
+	}
+	if err := Convert_extensions_RunAsUserStrategyOptions_To_v1beta1_RunAsUserStrategyOptions(&in.RunAsUser, &out.RunAsUser, s); err != nil {
+		return err
+	}
+	return nil
+}
+
+func Convert_extensions_PodSecurityPolicySpec_To_v1beta1_PodSecurityPolicySpec(in *extensions.PodSecurityPolicySpec, out *PodSecurityPolicySpec, s conversion.Scope) error {
+	return autoConvert_extensions_PodSecurityPolicySpec_To_v1beta1_PodSecurityPolicySpec(in, out, s)
+}
+
+func autoConvert_extensions_ReplicaSet_To_v1beta1_ReplicaSet(in *extensions.ReplicaSet, out *ReplicaSet, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*extensions.ReplicaSet))(in)
+	}
+	if err := api.Convert_unversioned_TypeMeta_To_unversioned_TypeMeta(&in.TypeMeta, &out.TypeMeta, s); err != nil {
+		return err
+	}
+	if err := Convert_api_ObjectMeta_To_v1_ObjectMeta(&in.ObjectMeta, &out.ObjectMeta, s); err != nil {
+		return err
+	}
+	if err := Convert_extensions_ReplicaSetSpec_To_v1beta1_ReplicaSetSpec(&in.Spec, &out.Spec, s); err != nil {
+		return err
+	}
+	if err := Convert_extensions_ReplicaSetStatus_To_v1beta1_ReplicaSetStatus(&in.Status, &out.Status, s); err != nil {
+		return err
+	}
+	return nil
+}
+
+func Convert_extensions_ReplicaSet_To_v1beta1_ReplicaSet(in *extensions.ReplicaSet, out *ReplicaSet, s conversion.Scope) error {
+	return autoConvert_extensions_ReplicaSet_To_v1beta1_ReplicaSet(in, out, s)
+}
+
+func autoConvert_extensions_ReplicaSetList_To_v1beta1_ReplicaSetList(in *extensions.ReplicaSetList, out *ReplicaSetList, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*extensions.ReplicaSetList))(in)
+	}
+	if err := api.Convert_unversioned_TypeMeta_To_unversioned_TypeMeta(&in.TypeMeta, &out.TypeMeta, s); err != nil {
+		return err
+	}
+	if err := api.Convert_unversioned_ListMeta_To_unversioned_ListMeta(&in.ListMeta, &out.ListMeta, s); err != nil {
+		return err
+	}
+	if in.Items != nil {
+		out.Items = make([]ReplicaSet, len(in.Items))
+		for i := range in.Items {
+			if err := Convert_extensions_ReplicaSet_To_v1beta1_ReplicaSet(&in.Items[i], &out.Items[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
+	return nil
+}
+
+func Convert_extensions_ReplicaSetList_To_v1beta1_ReplicaSetList(in *extensions.ReplicaSetList, out *ReplicaSetList, s conversion.Scope) error {
+	return autoConvert_extensions_ReplicaSetList_To_v1beta1_ReplicaSetList(in, out, s)
+}
+
+func autoConvert_extensions_ReplicaSetSpec_To_v1beta1_ReplicaSetSpec(in *extensions.ReplicaSetSpec, out *ReplicaSetSpec, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*extensions.ReplicaSetSpec))(in)
+	}
+	if err := s.Convert(&in.Replicas, &out.Replicas, 0); err != nil {
+		return err
+	}
+	// unable to generate simple pointer conversion for unversioned.LabelSelector -> v1beta1.LabelSelector
+	if in.Selector != nil {
+		out.Selector = new(LabelSelector)
+		if err := Convert_unversioned_LabelSelector_To_v1beta1_LabelSelector(in.Selector, out.Selector, s); err != nil {
+			return err
+		}
+	} else {
+		out.Selector = nil
+	}
+	// unable to generate simple pointer conversion for api.PodTemplateSpec -> v1.PodTemplateSpec
+	if in.Template != nil {
+		out.Template = new(v1.PodTemplateSpec)
+		if err := Convert_api_PodTemplateSpec_To_v1_PodTemplateSpec(in.Template, out.Template, s); err != nil {
+			return err
+		}
+	} else {
+		out.Template = nil
+	}
+	return nil
+}
+
+func autoConvert_extensions_ReplicaSetStatus_To_v1beta1_ReplicaSetStatus(in *extensions.ReplicaSetStatus, out *ReplicaSetStatus, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*extensions.ReplicaSetStatus))(in)
+	}
+	out.Replicas = int32(in.Replicas)
+	out.ObservedGeneration = in.ObservedGeneration
+	return nil
+}
+
+func Convert_extensions_ReplicaSetStatus_To_v1beta1_ReplicaSetStatus(in *extensions.ReplicaSetStatus, out *ReplicaSetStatus, s conversion.Scope) error {
+	return autoConvert_extensions_ReplicaSetStatus_To_v1beta1_ReplicaSetStatus(in, out, s)
 }
 
 func autoConvert_extensions_ReplicationControllerDummy_To_v1beta1_ReplicationControllerDummy(in *extensions.ReplicationControllerDummy, out *ReplicationControllerDummy, s conversion.Scope) error {
@@ -3203,6 +3591,29 @@ func Convert_extensions_ReplicationControllerDummy_To_v1beta1_ReplicationControl
 	return autoConvert_extensions_ReplicationControllerDummy_To_v1beta1_ReplicationControllerDummy(in, out, s)
 }
 
+func autoConvert_extensions_RollbackConfig_To_v1beta1_RollbackConfig(in *extensions.RollbackConfig, out *RollbackConfig, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*extensions.RollbackConfig))(in)
+	}
+	out.Revision = in.Revision
+	return nil
+}
+
+func Convert_extensions_RollbackConfig_To_v1beta1_RollbackConfig(in *extensions.RollbackConfig, out *RollbackConfig, s conversion.Scope) error {
+	return autoConvert_extensions_RollbackConfig_To_v1beta1_RollbackConfig(in, out, s)
+}
+
+func autoConvert_extensions_RollingUpdateDaemonSet_To_v1beta1_RollingUpdateDaemonSet(in *extensions.RollingUpdateDaemonSet, out *RollingUpdateDaemonSet, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*extensions.RollingUpdateDaemonSet))(in)
+	}
+	if err := s.Convert(&in.MaxUnavailable, &out.MaxUnavailable, 0); err != nil {
+		return err
+	}
+	out.MinReadySeconds = int32(in.MinReadySeconds)
+	return nil
+}
+
 func autoConvert_extensions_RollingUpdateDeployment_To_v1beta1_RollingUpdateDeployment(in *extensions.RollingUpdateDeployment, out *RollingUpdateDeployment, s conversion.Scope) error {
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
 		defaulting.(func(*extensions.RollingUpdateDeployment))(in)
@@ -3213,8 +3624,50 @@ func autoConvert_extensions_RollingUpdateDeployment_To_v1beta1_RollingUpdateDepl
 	if err := s.Convert(&in.MaxSurge, &out.MaxSurge, 0); err != nil {
 		return err
 	}
-	out.MinReadySeconds = int32(in.MinReadySeconds)
 	return nil
+}
+
+func autoConvert_extensions_RunAsUserStrategyOptions_To_v1beta1_RunAsUserStrategyOptions(in *extensions.RunAsUserStrategyOptions, out *RunAsUserStrategyOptions, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*extensions.RunAsUserStrategyOptions))(in)
+	}
+	out.Type = RunAsUserStrategy(in.Type)
+	if in.Ranges != nil {
+		out.Ranges = make([]IDRange, len(in.Ranges))
+		for i := range in.Ranges {
+			if err := Convert_extensions_IDRange_To_v1beta1_IDRange(&in.Ranges[i], &out.Ranges[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Ranges = nil
+	}
+	return nil
+}
+
+func Convert_extensions_RunAsUserStrategyOptions_To_v1beta1_RunAsUserStrategyOptions(in *extensions.RunAsUserStrategyOptions, out *RunAsUserStrategyOptions, s conversion.Scope) error {
+	return autoConvert_extensions_RunAsUserStrategyOptions_To_v1beta1_RunAsUserStrategyOptions(in, out, s)
+}
+
+func autoConvert_extensions_SELinuxContextStrategyOptions_To_v1beta1_SELinuxContextStrategyOptions(in *extensions.SELinuxContextStrategyOptions, out *SELinuxContextStrategyOptions, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*extensions.SELinuxContextStrategyOptions))(in)
+	}
+	out.Type = SELinuxContextStrategy(in.Type)
+	// unable to generate simple pointer conversion for api.SELinuxOptions -> v1.SELinuxOptions
+	if in.SELinuxOptions != nil {
+		out.SELinuxOptions = new(v1.SELinuxOptions)
+		if err := Convert_api_SELinuxOptions_To_v1_SELinuxOptions(in.SELinuxOptions, out.SELinuxOptions, s); err != nil {
+			return err
+		}
+	} else {
+		out.SELinuxOptions = nil
+	}
+	return nil
+}
+
+func Convert_extensions_SELinuxContextStrategyOptions_To_v1beta1_SELinuxContextStrategyOptions(in *extensions.SELinuxContextStrategyOptions, out *SELinuxContextStrategyOptions, s conversion.Scope) error {
+	return autoConvert_extensions_SELinuxContextStrategyOptions_To_v1beta1_SELinuxContextStrategyOptions(in, out, s)
 }
 
 func autoConvert_extensions_Scale_To_v1beta1_Scale(in *extensions.Scale, out *Scale, s conversion.Scope) error {
@@ -3484,58 +3937,6 @@ func Convert_v1beta1_ClusterAutoscalerSpec_To_extensions_ClusterAutoscalerSpec(i
 	return autoConvert_v1beta1_ClusterAutoscalerSpec_To_extensions_ClusterAutoscalerSpec(in, out, s)
 }
 
-func autoConvert_v1beta1_ConfigMap_To_extensions_ConfigMap(in *ConfigMap, out *extensions.ConfigMap, s conversion.Scope) error {
-	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
-		defaulting.(func(*ConfigMap))(in)
-	}
-	if err := api.Convert_unversioned_TypeMeta_To_unversioned_TypeMeta(&in.TypeMeta, &out.TypeMeta, s); err != nil {
-		return err
-	}
-	if err := Convert_v1_ObjectMeta_To_api_ObjectMeta(&in.ObjectMeta, &out.ObjectMeta, s); err != nil {
-		return err
-	}
-	if in.Data != nil {
-		out.Data = make(map[string]string)
-		for key, val := range in.Data {
-			out.Data[key] = val
-		}
-	} else {
-		out.Data = nil
-	}
-	return nil
-}
-
-func Convert_v1beta1_ConfigMap_To_extensions_ConfigMap(in *ConfigMap, out *extensions.ConfigMap, s conversion.Scope) error {
-	return autoConvert_v1beta1_ConfigMap_To_extensions_ConfigMap(in, out, s)
-}
-
-func autoConvert_v1beta1_ConfigMapList_To_extensions_ConfigMapList(in *ConfigMapList, out *extensions.ConfigMapList, s conversion.Scope) error {
-	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
-		defaulting.(func(*ConfigMapList))(in)
-	}
-	if err := api.Convert_unversioned_TypeMeta_To_unversioned_TypeMeta(&in.TypeMeta, &out.TypeMeta, s); err != nil {
-		return err
-	}
-	if err := api.Convert_unversioned_ListMeta_To_unversioned_ListMeta(&in.ListMeta, &out.ListMeta, s); err != nil {
-		return err
-	}
-	if in.Items != nil {
-		out.Items = make([]extensions.ConfigMap, len(in.Items))
-		for i := range in.Items {
-			if err := Convert_v1beta1_ConfigMap_To_extensions_ConfigMap(&in.Items[i], &out.Items[i], s); err != nil {
-				return err
-			}
-		}
-	} else {
-		out.Items = nil
-	}
-	return nil
-}
-
-func Convert_v1beta1_ConfigMapList_To_extensions_ConfigMapList(in *ConfigMapList, out *extensions.ConfigMapList, s conversion.Scope) error {
-	return autoConvert_v1beta1_ConfigMapList_To_extensions_ConfigMapList(in, out, s)
-}
-
 func autoConvert_v1beta1_DaemonSet_To_extensions_DaemonSet(in *DaemonSet, out *extensions.DaemonSet, s conversion.Scope) error {
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
 		defaulting.(func(*DaemonSet))(in)
@@ -3590,29 +3991,25 @@ func autoConvert_v1beta1_DaemonSetSpec_To_extensions_DaemonSetSpec(in *DaemonSet
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
 		defaulting.(func(*DaemonSetSpec))(in)
 	}
-	// unable to generate simple pointer conversion for v1beta1.LabelSelector -> extensions.LabelSelector
+	// unable to generate simple pointer conversion for v1beta1.LabelSelector -> unversioned.LabelSelector
 	if in.Selector != nil {
-		out.Selector = new(extensions.LabelSelector)
-		if err := Convert_v1beta1_LabelSelector_To_extensions_LabelSelector(in.Selector, out.Selector, s); err != nil {
+		out.Selector = new(unversioned.LabelSelector)
+		if err := Convert_v1beta1_LabelSelector_To_unversioned_LabelSelector(in.Selector, out.Selector, s); err != nil {
 			return err
 		}
 	} else {
 		out.Selector = nil
 	}
-	// unable to generate simple pointer conversion for v1.PodTemplateSpec -> api.PodTemplateSpec
-	if in.Template != nil {
-		out.Template = new(api.PodTemplateSpec)
-		if err := Convert_v1_PodTemplateSpec_To_api_PodTemplateSpec(in.Template, out.Template, s); err != nil {
-			return err
-		}
-	} else {
-		out.Template = nil
+	if err := Convert_v1_PodTemplateSpec_To_api_PodTemplateSpec(&in.Template, &out.Template, s); err != nil {
+		return err
+	}
+	if err := Convert_v1beta1_DaemonSetUpdateStrategy_To_extensions_DaemonSetUpdateStrategy(&in.UpdateStrategy, &out.UpdateStrategy, s); err != nil {
+		return err
+	}
+	if err := api.Convert_string_ref_To_string(&in.UniqueLabelKey, &out.UniqueLabelKey, s); err != nil {
+		return err
 	}
 	return nil
-}
-
-func Convert_v1beta1_DaemonSetSpec_To_extensions_DaemonSetSpec(in *DaemonSetSpec, out *extensions.DaemonSetSpec, s conversion.Scope) error {
-	return autoConvert_v1beta1_DaemonSetSpec_To_extensions_DaemonSetSpec(in, out, s)
 }
 
 func autoConvert_v1beta1_DaemonSetStatus_To_extensions_DaemonSetStatus(in *DaemonSetStatus, out *extensions.DaemonSetStatus, s conversion.Scope) error {
@@ -3627,6 +4024,23 @@ func autoConvert_v1beta1_DaemonSetStatus_To_extensions_DaemonSetStatus(in *Daemo
 
 func Convert_v1beta1_DaemonSetStatus_To_extensions_DaemonSetStatus(in *DaemonSetStatus, out *extensions.DaemonSetStatus, s conversion.Scope) error {
 	return autoConvert_v1beta1_DaemonSetStatus_To_extensions_DaemonSetStatus(in, out, s)
+}
+
+func autoConvert_v1beta1_DaemonSetUpdateStrategy_To_extensions_DaemonSetUpdateStrategy(in *DaemonSetUpdateStrategy, out *extensions.DaemonSetUpdateStrategy, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*DaemonSetUpdateStrategy))(in)
+	}
+	out.Type = extensions.DaemonSetUpdateStrategyType(in.Type)
+	// unable to generate simple pointer conversion for v1beta1.RollingUpdateDaemonSet -> extensions.RollingUpdateDaemonSet
+	if in.RollingUpdate != nil {
+		out.RollingUpdate = new(extensions.RollingUpdateDaemonSet)
+		if err := Convert_v1beta1_RollingUpdateDaemonSet_To_extensions_RollingUpdateDaemonSet(in.RollingUpdate, out.RollingUpdate, s); err != nil {
+			return err
+		}
+	} else {
+		out.RollingUpdate = nil
+	}
+	return nil
 }
 
 func autoConvert_v1beta1_Deployment_To_extensions_Deployment(in *Deployment, out *extensions.Deployment, s conversion.Scope) error {
@@ -3679,6 +4093,32 @@ func Convert_v1beta1_DeploymentList_To_extensions_DeploymentList(in *DeploymentL
 	return autoConvert_v1beta1_DeploymentList_To_extensions_DeploymentList(in, out, s)
 }
 
+func autoConvert_v1beta1_DeploymentRollback_To_extensions_DeploymentRollback(in *DeploymentRollback, out *extensions.DeploymentRollback, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*DeploymentRollback))(in)
+	}
+	if err := api.Convert_unversioned_TypeMeta_To_unversioned_TypeMeta(&in.TypeMeta, &out.TypeMeta, s); err != nil {
+		return err
+	}
+	out.Name = in.Name
+	if in.UpdatedAnnotations != nil {
+		out.UpdatedAnnotations = make(map[string]string)
+		for key, val := range in.UpdatedAnnotations {
+			out.UpdatedAnnotations[key] = val
+		}
+	} else {
+		out.UpdatedAnnotations = nil
+	}
+	if err := Convert_v1beta1_RollbackConfig_To_extensions_RollbackConfig(&in.RollbackTo, &out.RollbackTo, s); err != nil {
+		return err
+	}
+	return nil
+}
+
+func Convert_v1beta1_DeploymentRollback_To_extensions_DeploymentRollback(in *DeploymentRollback, out *extensions.DeploymentRollback, s conversion.Scope) error {
+	return autoConvert_v1beta1_DeploymentRollback_To_extensions_DeploymentRollback(in, out, s)
+}
+
 func autoConvert_v1beta1_DeploymentSpec_To_extensions_DeploymentSpec(in *DeploymentSpec, out *extensions.DeploymentSpec, s conversion.Scope) error {
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
 		defaulting.(func(*DeploymentSpec))(in)
@@ -3698,7 +4138,23 @@ func autoConvert_v1beta1_DeploymentSpec_To_extensions_DeploymentSpec(in *Deploym
 	if err := s.Convert(&in.Strategy, &out.Strategy, 0); err != nil {
 		return err
 	}
-	// in.UniqueLabelKey has no peer in out
+	out.MinReadySeconds = int(in.MinReadySeconds)
+	if in.RevisionHistoryLimit != nil {
+		out.RevisionHistoryLimit = new(int)
+		*out.RevisionHistoryLimit = int(*in.RevisionHistoryLimit)
+	} else {
+		out.RevisionHistoryLimit = nil
+	}
+	out.Paused = in.Paused
+	// unable to generate simple pointer conversion for v1beta1.RollbackConfig -> extensions.RollbackConfig
+	if in.RollbackTo != nil {
+		out.RollbackTo = new(extensions.RollbackConfig)
+		if err := Convert_v1beta1_RollbackConfig_To_extensions_RollbackConfig(in.RollbackTo, out.RollbackTo, s); err != nil {
+			return err
+		}
+	} else {
+		out.RollbackTo = nil
+	}
 	return nil
 }
 
@@ -3708,6 +4164,8 @@ func autoConvert_v1beta1_DeploymentStatus_To_extensions_DeploymentStatus(in *Dep
 	}
 	out.Replicas = int(in.Replicas)
 	out.UpdatedReplicas = int(in.UpdatedReplicas)
+	out.AvailableReplicas = int(in.AvailableReplicas)
+	out.UnavailableReplicas = int(in.UnavailableReplicas)
 	return nil
 }
 
@@ -3865,6 +4323,32 @@ func Convert_v1beta1_HorizontalPodAutoscalerStatus_To_extensions_HorizontalPodAu
 	return autoConvert_v1beta1_HorizontalPodAutoscalerStatus_To_extensions_HorizontalPodAutoscalerStatus(in, out, s)
 }
 
+func autoConvert_v1beta1_HostPortRange_To_extensions_HostPortRange(in *HostPortRange, out *extensions.HostPortRange, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*HostPortRange))(in)
+	}
+	out.Min = int(in.Min)
+	out.Max = int(in.Max)
+	return nil
+}
+
+func Convert_v1beta1_HostPortRange_To_extensions_HostPortRange(in *HostPortRange, out *extensions.HostPortRange, s conversion.Scope) error {
+	return autoConvert_v1beta1_HostPortRange_To_extensions_HostPortRange(in, out, s)
+}
+
+func autoConvert_v1beta1_IDRange_To_extensions_IDRange(in *IDRange, out *extensions.IDRange, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*IDRange))(in)
+	}
+	out.Min = in.Min
+	out.Max = in.Max
+	return nil
+}
+
+func Convert_v1beta1_IDRange_To_extensions_IDRange(in *IDRange, out *extensions.IDRange, s conversion.Scope) error {
+	return autoConvert_v1beta1_IDRange_To_extensions_IDRange(in, out, s)
+}
+
 func autoConvert_v1beta1_Ingress_To_extensions_Ingress(in *Ingress, out *extensions.Ingress, s conversion.Scope) error {
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
 		defaulting.(func(*Ingress))(in)
@@ -3978,6 +4462,16 @@ func autoConvert_v1beta1_IngressSpec_To_extensions_IngressSpec(in *IngressSpec, 
 	} else {
 		out.Backend = nil
 	}
+	if in.TLS != nil {
+		out.TLS = make([]extensions.IngressTLS, len(in.TLS))
+		for i := range in.TLS {
+			if err := Convert_v1beta1_IngressTLS_To_extensions_IngressTLS(&in.TLS[i], &out.TLS[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.TLS = nil
+	}
 	if in.Rules != nil {
 		out.Rules = make([]extensions.IngressRule, len(in.Rules))
 		for i := range in.Rules {
@@ -4007,6 +4501,26 @@ func autoConvert_v1beta1_IngressStatus_To_extensions_IngressStatus(in *IngressSt
 
 func Convert_v1beta1_IngressStatus_To_extensions_IngressStatus(in *IngressStatus, out *extensions.IngressStatus, s conversion.Scope) error {
 	return autoConvert_v1beta1_IngressStatus_To_extensions_IngressStatus(in, out, s)
+}
+
+func autoConvert_v1beta1_IngressTLS_To_extensions_IngressTLS(in *IngressTLS, out *extensions.IngressTLS, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*IngressTLS))(in)
+	}
+	if in.Hosts != nil {
+		out.Hosts = make([]string, len(in.Hosts))
+		for i := range in.Hosts {
+			out.Hosts[i] = in.Hosts[i]
+		}
+	} else {
+		out.Hosts = nil
+	}
+	out.SecretName = in.SecretName
+	return nil
+}
+
+func Convert_v1beta1_IngressTLS_To_extensions_IngressTLS(in *IngressTLS, out *extensions.IngressTLS, s conversion.Scope) error {
+	return autoConvert_v1beta1_IngressTLS_To_extensions_IngressTLS(in, out, s)
 }
 
 func autoConvert_v1beta1_Job_To_extensions_Job(in *Job, out *extensions.Job, s conversion.Scope) error {
@@ -4102,10 +4616,10 @@ func autoConvert_v1beta1_JobSpec_To_extensions_JobSpec(in *JobSpec, out *extensi
 	} else {
 		out.ActiveDeadlineSeconds = nil
 	}
-	// unable to generate simple pointer conversion for v1beta1.LabelSelector -> extensions.LabelSelector
+	// unable to generate simple pointer conversion for v1beta1.LabelSelector -> unversioned.LabelSelector
 	if in.Selector != nil {
-		out.Selector = new(extensions.LabelSelector)
-		if err := Convert_v1beta1_LabelSelector_To_extensions_LabelSelector(in.Selector, out.Selector, s); err != nil {
+		out.Selector = new(unversioned.LabelSelector)
+		if err := Convert_v1beta1_LabelSelector_To_unversioned_LabelSelector(in.Selector, out.Selector, s); err != nil {
 			return err
 		}
 	} else {
@@ -4163,7 +4677,7 @@ func Convert_v1beta1_JobStatus_To_extensions_JobStatus(in *JobStatus, out *exten
 	return autoConvert_v1beta1_JobStatus_To_extensions_JobStatus(in, out, s)
 }
 
-func autoConvert_v1beta1_LabelSelector_To_extensions_LabelSelector(in *LabelSelector, out *extensions.LabelSelector, s conversion.Scope) error {
+func autoConvert_v1beta1_LabelSelector_To_unversioned_LabelSelector(in *LabelSelector, out *unversioned.LabelSelector, s conversion.Scope) error {
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
 		defaulting.(func(*LabelSelector))(in)
 	}
@@ -4176,9 +4690,9 @@ func autoConvert_v1beta1_LabelSelector_To_extensions_LabelSelector(in *LabelSele
 		out.MatchLabels = nil
 	}
 	if in.MatchExpressions != nil {
-		out.MatchExpressions = make([]extensions.LabelSelectorRequirement, len(in.MatchExpressions))
+		out.MatchExpressions = make([]unversioned.LabelSelectorRequirement, len(in.MatchExpressions))
 		for i := range in.MatchExpressions {
-			if err := Convert_v1beta1_LabelSelectorRequirement_To_extensions_LabelSelectorRequirement(&in.MatchExpressions[i], &out.MatchExpressions[i], s); err != nil {
+			if err := Convert_v1beta1_LabelSelectorRequirement_To_unversioned_LabelSelectorRequirement(&in.MatchExpressions[i], &out.MatchExpressions[i], s); err != nil {
 				return err
 			}
 		}
@@ -4188,16 +4702,16 @@ func autoConvert_v1beta1_LabelSelector_To_extensions_LabelSelector(in *LabelSele
 	return nil
 }
 
-func Convert_v1beta1_LabelSelector_To_extensions_LabelSelector(in *LabelSelector, out *extensions.LabelSelector, s conversion.Scope) error {
-	return autoConvert_v1beta1_LabelSelector_To_extensions_LabelSelector(in, out, s)
+func Convert_v1beta1_LabelSelector_To_unversioned_LabelSelector(in *LabelSelector, out *unversioned.LabelSelector, s conversion.Scope) error {
+	return autoConvert_v1beta1_LabelSelector_To_unversioned_LabelSelector(in, out, s)
 }
 
-func autoConvert_v1beta1_LabelSelectorRequirement_To_extensions_LabelSelectorRequirement(in *LabelSelectorRequirement, out *extensions.LabelSelectorRequirement, s conversion.Scope) error {
+func autoConvert_v1beta1_LabelSelectorRequirement_To_unversioned_LabelSelectorRequirement(in *LabelSelectorRequirement, out *unversioned.LabelSelectorRequirement, s conversion.Scope) error {
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
 		defaulting.(func(*LabelSelectorRequirement))(in)
 	}
 	out.Key = in.Key
-	out.Operator = extensions.LabelSelectorOperator(in.Operator)
+	out.Operator = unversioned.LabelSelectorOperator(in.Operator)
 	if in.Values != nil {
 		out.Values = make([]string, len(in.Values))
 		for i := range in.Values {
@@ -4209,8 +4723,8 @@ func autoConvert_v1beta1_LabelSelectorRequirement_To_extensions_LabelSelectorReq
 	return nil
 }
 
-func Convert_v1beta1_LabelSelectorRequirement_To_extensions_LabelSelectorRequirement(in *LabelSelectorRequirement, out *extensions.LabelSelectorRequirement, s conversion.Scope) error {
-	return autoConvert_v1beta1_LabelSelectorRequirement_To_extensions_LabelSelectorRequirement(in, out, s)
+func Convert_v1beta1_LabelSelectorRequirement_To_unversioned_LabelSelectorRequirement(in *LabelSelectorRequirement, out *unversioned.LabelSelectorRequirement, s conversion.Scope) error {
+	return autoConvert_v1beta1_LabelSelectorRequirement_To_unversioned_LabelSelectorRequirement(in, out, s)
 }
 
 func autoConvert_v1beta1_ListOptions_To_api_ListOptions(in *ListOptions, out *api.ListOptions, s conversion.Scope) error {
@@ -4254,6 +4768,189 @@ func Convert_v1beta1_NodeUtilization_To_extensions_NodeUtilization(in *NodeUtili
 	return autoConvert_v1beta1_NodeUtilization_To_extensions_NodeUtilization(in, out, s)
 }
 
+func autoConvert_v1beta1_PodSecurityPolicy_To_extensions_PodSecurityPolicy(in *PodSecurityPolicy, out *extensions.PodSecurityPolicy, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*PodSecurityPolicy))(in)
+	}
+	if err := api.Convert_unversioned_TypeMeta_To_unversioned_TypeMeta(&in.TypeMeta, &out.TypeMeta, s); err != nil {
+		return err
+	}
+	if err := Convert_v1_ObjectMeta_To_api_ObjectMeta(&in.ObjectMeta, &out.ObjectMeta, s); err != nil {
+		return err
+	}
+	if err := Convert_v1beta1_PodSecurityPolicySpec_To_extensions_PodSecurityPolicySpec(&in.Spec, &out.Spec, s); err != nil {
+		return err
+	}
+	return nil
+}
+
+func Convert_v1beta1_PodSecurityPolicy_To_extensions_PodSecurityPolicy(in *PodSecurityPolicy, out *extensions.PodSecurityPolicy, s conversion.Scope) error {
+	return autoConvert_v1beta1_PodSecurityPolicy_To_extensions_PodSecurityPolicy(in, out, s)
+}
+
+func autoConvert_v1beta1_PodSecurityPolicyList_To_extensions_PodSecurityPolicyList(in *PodSecurityPolicyList, out *extensions.PodSecurityPolicyList, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*PodSecurityPolicyList))(in)
+	}
+	if err := api.Convert_unversioned_TypeMeta_To_unversioned_TypeMeta(&in.TypeMeta, &out.TypeMeta, s); err != nil {
+		return err
+	}
+	if err := api.Convert_unversioned_ListMeta_To_unversioned_ListMeta(&in.ListMeta, &out.ListMeta, s); err != nil {
+		return err
+	}
+	if in.Items != nil {
+		out.Items = make([]extensions.PodSecurityPolicy, len(in.Items))
+		for i := range in.Items {
+			if err := Convert_v1beta1_PodSecurityPolicy_To_extensions_PodSecurityPolicy(&in.Items[i], &out.Items[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
+	return nil
+}
+
+func Convert_v1beta1_PodSecurityPolicyList_To_extensions_PodSecurityPolicyList(in *PodSecurityPolicyList, out *extensions.PodSecurityPolicyList, s conversion.Scope) error {
+	return autoConvert_v1beta1_PodSecurityPolicyList_To_extensions_PodSecurityPolicyList(in, out, s)
+}
+
+func autoConvert_v1beta1_PodSecurityPolicySpec_To_extensions_PodSecurityPolicySpec(in *PodSecurityPolicySpec, out *extensions.PodSecurityPolicySpec, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*PodSecurityPolicySpec))(in)
+	}
+	out.Privileged = in.Privileged
+	if in.Capabilities != nil {
+		out.Capabilities = make([]api.Capability, len(in.Capabilities))
+		for i := range in.Capabilities {
+			out.Capabilities[i] = api.Capability(in.Capabilities[i])
+		}
+	} else {
+		out.Capabilities = nil
+	}
+	if in.Volumes != nil {
+		out.Volumes = make([]extensions.FSType, len(in.Volumes))
+		for i := range in.Volumes {
+			out.Volumes[i] = extensions.FSType(in.Volumes[i])
+		}
+	} else {
+		out.Volumes = nil
+	}
+	out.HostNetwork = in.HostNetwork
+	if in.HostPorts != nil {
+		out.HostPorts = make([]extensions.HostPortRange, len(in.HostPorts))
+		for i := range in.HostPorts {
+			if err := Convert_v1beta1_HostPortRange_To_extensions_HostPortRange(&in.HostPorts[i], &out.HostPorts[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.HostPorts = nil
+	}
+	out.HostPID = in.HostPID
+	out.HostIPC = in.HostIPC
+	if err := Convert_v1beta1_SELinuxContextStrategyOptions_To_extensions_SELinuxContextStrategyOptions(&in.SELinuxContext, &out.SELinuxContext, s); err != nil {
+		return err
+	}
+	if err := Convert_v1beta1_RunAsUserStrategyOptions_To_extensions_RunAsUserStrategyOptions(&in.RunAsUser, &out.RunAsUser, s); err != nil {
+		return err
+	}
+	return nil
+}
+
+func Convert_v1beta1_PodSecurityPolicySpec_To_extensions_PodSecurityPolicySpec(in *PodSecurityPolicySpec, out *extensions.PodSecurityPolicySpec, s conversion.Scope) error {
+	return autoConvert_v1beta1_PodSecurityPolicySpec_To_extensions_PodSecurityPolicySpec(in, out, s)
+}
+
+func autoConvert_v1beta1_ReplicaSet_To_extensions_ReplicaSet(in *ReplicaSet, out *extensions.ReplicaSet, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*ReplicaSet))(in)
+	}
+	if err := api.Convert_unversioned_TypeMeta_To_unversioned_TypeMeta(&in.TypeMeta, &out.TypeMeta, s); err != nil {
+		return err
+	}
+	if err := Convert_v1_ObjectMeta_To_api_ObjectMeta(&in.ObjectMeta, &out.ObjectMeta, s); err != nil {
+		return err
+	}
+	if err := Convert_v1beta1_ReplicaSetSpec_To_extensions_ReplicaSetSpec(&in.Spec, &out.Spec, s); err != nil {
+		return err
+	}
+	if err := Convert_v1beta1_ReplicaSetStatus_To_extensions_ReplicaSetStatus(&in.Status, &out.Status, s); err != nil {
+		return err
+	}
+	return nil
+}
+
+func Convert_v1beta1_ReplicaSet_To_extensions_ReplicaSet(in *ReplicaSet, out *extensions.ReplicaSet, s conversion.Scope) error {
+	return autoConvert_v1beta1_ReplicaSet_To_extensions_ReplicaSet(in, out, s)
+}
+
+func autoConvert_v1beta1_ReplicaSetList_To_extensions_ReplicaSetList(in *ReplicaSetList, out *extensions.ReplicaSetList, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*ReplicaSetList))(in)
+	}
+	if err := api.Convert_unversioned_TypeMeta_To_unversioned_TypeMeta(&in.TypeMeta, &out.TypeMeta, s); err != nil {
+		return err
+	}
+	if err := api.Convert_unversioned_ListMeta_To_unversioned_ListMeta(&in.ListMeta, &out.ListMeta, s); err != nil {
+		return err
+	}
+	if in.Items != nil {
+		out.Items = make([]extensions.ReplicaSet, len(in.Items))
+		for i := range in.Items {
+			if err := Convert_v1beta1_ReplicaSet_To_extensions_ReplicaSet(&in.Items[i], &out.Items[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
+	return nil
+}
+
+func Convert_v1beta1_ReplicaSetList_To_extensions_ReplicaSetList(in *ReplicaSetList, out *extensions.ReplicaSetList, s conversion.Scope) error {
+	return autoConvert_v1beta1_ReplicaSetList_To_extensions_ReplicaSetList(in, out, s)
+}
+
+func autoConvert_v1beta1_ReplicaSetSpec_To_extensions_ReplicaSetSpec(in *ReplicaSetSpec, out *extensions.ReplicaSetSpec, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*ReplicaSetSpec))(in)
+	}
+	// in.Replicas has no peer in out
+	// unable to generate simple pointer conversion for v1beta1.LabelSelector -> unversioned.LabelSelector
+	if in.Selector != nil {
+		out.Selector = new(unversioned.LabelSelector)
+		if err := Convert_v1beta1_LabelSelector_To_unversioned_LabelSelector(in.Selector, out.Selector, s); err != nil {
+			return err
+		}
+	} else {
+		out.Selector = nil
+	}
+	// unable to generate simple pointer conversion for v1.PodTemplateSpec -> api.PodTemplateSpec
+	if in.Template != nil {
+		out.Template = new(api.PodTemplateSpec)
+		if err := Convert_v1_PodTemplateSpec_To_api_PodTemplateSpec(in.Template, out.Template, s); err != nil {
+			return err
+		}
+	} else {
+		out.Template = nil
+	}
+	return nil
+}
+
+func autoConvert_v1beta1_ReplicaSetStatus_To_extensions_ReplicaSetStatus(in *ReplicaSetStatus, out *extensions.ReplicaSetStatus, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*ReplicaSetStatus))(in)
+	}
+	out.Replicas = int(in.Replicas)
+	out.ObservedGeneration = in.ObservedGeneration
+	return nil
+}
+
+func Convert_v1beta1_ReplicaSetStatus_To_extensions_ReplicaSetStatus(in *ReplicaSetStatus, out *extensions.ReplicaSetStatus, s conversion.Scope) error {
+	return autoConvert_v1beta1_ReplicaSetStatus_To_extensions_ReplicaSetStatus(in, out, s)
+}
+
 func autoConvert_v1beta1_ReplicationControllerDummy_To_extensions_ReplicationControllerDummy(in *ReplicationControllerDummy, out *extensions.ReplicationControllerDummy, s conversion.Scope) error {
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
 		defaulting.(func(*ReplicationControllerDummy))(in)
@@ -4268,14 +4965,77 @@ func Convert_v1beta1_ReplicationControllerDummy_To_extensions_ReplicationControl
 	return autoConvert_v1beta1_ReplicationControllerDummy_To_extensions_ReplicationControllerDummy(in, out, s)
 }
 
+func autoConvert_v1beta1_RollbackConfig_To_extensions_RollbackConfig(in *RollbackConfig, out *extensions.RollbackConfig, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*RollbackConfig))(in)
+	}
+	out.Revision = in.Revision
+	return nil
+}
+
+func Convert_v1beta1_RollbackConfig_To_extensions_RollbackConfig(in *RollbackConfig, out *extensions.RollbackConfig, s conversion.Scope) error {
+	return autoConvert_v1beta1_RollbackConfig_To_extensions_RollbackConfig(in, out, s)
+}
+
+func autoConvert_v1beta1_RollingUpdateDaemonSet_To_extensions_RollingUpdateDaemonSet(in *RollingUpdateDaemonSet, out *extensions.RollingUpdateDaemonSet, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*RollingUpdateDaemonSet))(in)
+	}
+	// in.MaxUnavailable has no peer in out
+	out.MinReadySeconds = int(in.MinReadySeconds)
+	return nil
+}
+
 func autoConvert_v1beta1_RollingUpdateDeployment_To_extensions_RollingUpdateDeployment(in *RollingUpdateDeployment, out *extensions.RollingUpdateDeployment, s conversion.Scope) error {
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
 		defaulting.(func(*RollingUpdateDeployment))(in)
 	}
 	// in.MaxUnavailable has no peer in out
 	// in.MaxSurge has no peer in out
-	out.MinReadySeconds = int(in.MinReadySeconds)
 	return nil
+}
+
+func autoConvert_v1beta1_RunAsUserStrategyOptions_To_extensions_RunAsUserStrategyOptions(in *RunAsUserStrategyOptions, out *extensions.RunAsUserStrategyOptions, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*RunAsUserStrategyOptions))(in)
+	}
+	out.Type = extensions.RunAsUserStrategy(in.Type)
+	if in.Ranges != nil {
+		out.Ranges = make([]extensions.IDRange, len(in.Ranges))
+		for i := range in.Ranges {
+			if err := Convert_v1beta1_IDRange_To_extensions_IDRange(&in.Ranges[i], &out.Ranges[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Ranges = nil
+	}
+	return nil
+}
+
+func Convert_v1beta1_RunAsUserStrategyOptions_To_extensions_RunAsUserStrategyOptions(in *RunAsUserStrategyOptions, out *extensions.RunAsUserStrategyOptions, s conversion.Scope) error {
+	return autoConvert_v1beta1_RunAsUserStrategyOptions_To_extensions_RunAsUserStrategyOptions(in, out, s)
+}
+
+func autoConvert_v1beta1_SELinuxContextStrategyOptions_To_extensions_SELinuxContextStrategyOptions(in *SELinuxContextStrategyOptions, out *extensions.SELinuxContextStrategyOptions, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*SELinuxContextStrategyOptions))(in)
+	}
+	out.Type = extensions.SELinuxContextStrategy(in.Type)
+	// unable to generate simple pointer conversion for v1.SELinuxOptions -> api.SELinuxOptions
+	if in.SELinuxOptions != nil {
+		out.SELinuxOptions = new(api.SELinuxOptions)
+		if err := Convert_v1_SELinuxOptions_To_api_SELinuxOptions(in.SELinuxOptions, out.SELinuxOptions, s); err != nil {
+			return err
+		}
+	} else {
+		out.SELinuxOptions = nil
+	}
+	return nil
+}
+
+func Convert_v1beta1_SELinuxContextStrategyOptions_To_extensions_SELinuxContextStrategyOptions(in *SELinuxContextStrategyOptions, out *extensions.SELinuxContextStrategyOptions, s conversion.Scope) error {
+	return autoConvert_v1beta1_SELinuxContextStrategyOptions_To_extensions_SELinuxContextStrategyOptions(in, out, s)
 }
 
 func autoConvert_v1beta1_Scale_To_extensions_Scale(in *Scale, out *extensions.Scale, s conversion.Scope) error {
@@ -4456,6 +5216,7 @@ func init() {
 		autoConvert_api_Capabilities_To_v1_Capabilities,
 		autoConvert_api_CephFSVolumeSource_To_v1_CephFSVolumeSource,
 		autoConvert_api_CinderVolumeSource_To_v1_CinderVolumeSource,
+		autoConvert_api_ConfigMapKeySelector_To_v1_ConfigMapKeySelector,
 		autoConvert_api_ContainerPort_To_v1_ContainerPort,
 		autoConvert_api_Container_To_v1_Container,
 		autoConvert_api_DownwardAPIVolumeFile_To_v1_DownwardAPIVolumeFile,
@@ -4471,6 +5232,7 @@ func init() {
 		autoConvert_api_GitRepoVolumeSource_To_v1_GitRepoVolumeSource,
 		autoConvert_api_GlusterfsVolumeSource_To_v1_GlusterfsVolumeSource,
 		autoConvert_api_HTTPGetAction_To_v1_HTTPGetAction,
+		autoConvert_api_HTTPHeader_To_v1_HTTPHeader,
 		autoConvert_api_Handler_To_v1_Handler,
 		autoConvert_api_HostPathVolumeSource_To_v1_HostPathVolumeSource,
 		autoConvert_api_ISCSIVolumeSource_To_v1_ISCSIVolumeSource,
@@ -4489,6 +5251,7 @@ func init() {
 		autoConvert_api_RBDVolumeSource_To_v1_RBDVolumeSource,
 		autoConvert_api_ResourceRequirements_To_v1_ResourceRequirements,
 		autoConvert_api_SELinuxOptions_To_v1_SELinuxOptions,
+		autoConvert_api_SecretKeySelector_To_v1_SecretKeySelector,
 		autoConvert_api_SecretVolumeSource_To_v1_SecretVolumeSource,
 		autoConvert_api_SecurityContext_To_v1_SecurityContext,
 		autoConvert_api_TCPSocketAction_To_v1_TCPSocketAction,
@@ -4500,13 +5263,13 @@ func init() {
 		autoConvert_extensions_ClusterAutoscalerList_To_v1beta1_ClusterAutoscalerList,
 		autoConvert_extensions_ClusterAutoscalerSpec_To_v1beta1_ClusterAutoscalerSpec,
 		autoConvert_extensions_ClusterAutoscaler_To_v1beta1_ClusterAutoscaler,
-		autoConvert_extensions_ConfigMapList_To_v1beta1_ConfigMapList,
-		autoConvert_extensions_ConfigMap_To_v1beta1_ConfigMap,
 		autoConvert_extensions_DaemonSetList_To_v1beta1_DaemonSetList,
 		autoConvert_extensions_DaemonSetSpec_To_v1beta1_DaemonSetSpec,
 		autoConvert_extensions_DaemonSetStatus_To_v1beta1_DaemonSetStatus,
+		autoConvert_extensions_DaemonSetUpdateStrategy_To_v1beta1_DaemonSetUpdateStrategy,
 		autoConvert_extensions_DaemonSet_To_v1beta1_DaemonSet,
 		autoConvert_extensions_DeploymentList_To_v1beta1_DeploymentList,
+		autoConvert_extensions_DeploymentRollback_To_v1beta1_DeploymentRollback,
 		autoConvert_extensions_DeploymentSpec_To_v1beta1_DeploymentSpec,
 		autoConvert_extensions_DeploymentStatus_To_v1beta1_DeploymentStatus,
 		autoConvert_extensions_DeploymentStrategy_To_v1beta1_DeploymentStrategy,
@@ -4517,23 +5280,35 @@ func init() {
 		autoConvert_extensions_HorizontalPodAutoscalerSpec_To_v1beta1_HorizontalPodAutoscalerSpec,
 		autoConvert_extensions_HorizontalPodAutoscalerStatus_To_v1beta1_HorizontalPodAutoscalerStatus,
 		autoConvert_extensions_HorizontalPodAutoscaler_To_v1beta1_HorizontalPodAutoscaler,
+		autoConvert_extensions_HostPortRange_To_v1beta1_HostPortRange,
+		autoConvert_extensions_IDRange_To_v1beta1_IDRange,
 		autoConvert_extensions_IngressBackend_To_v1beta1_IngressBackend,
 		autoConvert_extensions_IngressList_To_v1beta1_IngressList,
 		autoConvert_extensions_IngressRuleValue_To_v1beta1_IngressRuleValue,
 		autoConvert_extensions_IngressRule_To_v1beta1_IngressRule,
 		autoConvert_extensions_IngressSpec_To_v1beta1_IngressSpec,
 		autoConvert_extensions_IngressStatus_To_v1beta1_IngressStatus,
+		autoConvert_extensions_IngressTLS_To_v1beta1_IngressTLS,
 		autoConvert_extensions_Ingress_To_v1beta1_Ingress,
 		autoConvert_extensions_JobCondition_To_v1beta1_JobCondition,
 		autoConvert_extensions_JobList_To_v1beta1_JobList,
 		autoConvert_extensions_JobSpec_To_v1beta1_JobSpec,
 		autoConvert_extensions_JobStatus_To_v1beta1_JobStatus,
 		autoConvert_extensions_Job_To_v1beta1_Job,
-		autoConvert_extensions_LabelSelectorRequirement_To_v1beta1_LabelSelectorRequirement,
-		autoConvert_extensions_LabelSelector_To_v1beta1_LabelSelector,
 		autoConvert_extensions_NodeUtilization_To_v1beta1_NodeUtilization,
+		autoConvert_extensions_PodSecurityPolicyList_To_v1beta1_PodSecurityPolicyList,
+		autoConvert_extensions_PodSecurityPolicySpec_To_v1beta1_PodSecurityPolicySpec,
+		autoConvert_extensions_PodSecurityPolicy_To_v1beta1_PodSecurityPolicy,
+		autoConvert_extensions_ReplicaSetList_To_v1beta1_ReplicaSetList,
+		autoConvert_extensions_ReplicaSetSpec_To_v1beta1_ReplicaSetSpec,
+		autoConvert_extensions_ReplicaSetStatus_To_v1beta1_ReplicaSetStatus,
+		autoConvert_extensions_ReplicaSet_To_v1beta1_ReplicaSet,
 		autoConvert_extensions_ReplicationControllerDummy_To_v1beta1_ReplicationControllerDummy,
+		autoConvert_extensions_RollbackConfig_To_v1beta1_RollbackConfig,
+		autoConvert_extensions_RollingUpdateDaemonSet_To_v1beta1_RollingUpdateDaemonSet,
 		autoConvert_extensions_RollingUpdateDeployment_To_v1beta1_RollingUpdateDeployment,
+		autoConvert_extensions_RunAsUserStrategyOptions_To_v1beta1_RunAsUserStrategyOptions,
+		autoConvert_extensions_SELinuxContextStrategyOptions_To_v1beta1_SELinuxContextStrategyOptions,
 		autoConvert_extensions_ScaleSpec_To_v1beta1_ScaleSpec,
 		autoConvert_extensions_ScaleStatus_To_v1beta1_ScaleStatus,
 		autoConvert_extensions_Scale_To_v1beta1_Scale,
@@ -4542,10 +5317,13 @@ func init() {
 		autoConvert_extensions_ThirdPartyResourceData_To_v1beta1_ThirdPartyResourceData,
 		autoConvert_extensions_ThirdPartyResourceList_To_v1beta1_ThirdPartyResourceList,
 		autoConvert_extensions_ThirdPartyResource_To_v1beta1_ThirdPartyResource,
+		autoConvert_unversioned_LabelSelectorRequirement_To_v1beta1_LabelSelectorRequirement,
+		autoConvert_unversioned_LabelSelector_To_v1beta1_LabelSelector,
 		autoConvert_v1_AWSElasticBlockStoreVolumeSource_To_api_AWSElasticBlockStoreVolumeSource,
 		autoConvert_v1_Capabilities_To_api_Capabilities,
 		autoConvert_v1_CephFSVolumeSource_To_api_CephFSVolumeSource,
 		autoConvert_v1_CinderVolumeSource_To_api_CinderVolumeSource,
+		autoConvert_v1_ConfigMapKeySelector_To_api_ConfigMapKeySelector,
 		autoConvert_v1_ContainerPort_To_api_ContainerPort,
 		autoConvert_v1_Container_To_api_Container,
 		autoConvert_v1_DownwardAPIVolumeFile_To_api_DownwardAPIVolumeFile,
@@ -4561,6 +5339,7 @@ func init() {
 		autoConvert_v1_GitRepoVolumeSource_To_api_GitRepoVolumeSource,
 		autoConvert_v1_GlusterfsVolumeSource_To_api_GlusterfsVolumeSource,
 		autoConvert_v1_HTTPGetAction_To_api_HTTPGetAction,
+		autoConvert_v1_HTTPHeader_To_api_HTTPHeader,
 		autoConvert_v1_Handler_To_api_Handler,
 		autoConvert_v1_HostPathVolumeSource_To_api_HostPathVolumeSource,
 		autoConvert_v1_ISCSIVolumeSource_To_api_ISCSIVolumeSource,
@@ -4578,6 +5357,7 @@ func init() {
 		autoConvert_v1_RBDVolumeSource_To_api_RBDVolumeSource,
 		autoConvert_v1_ResourceRequirements_To_api_ResourceRequirements,
 		autoConvert_v1_SELinuxOptions_To_api_SELinuxOptions,
+		autoConvert_v1_SecretKeySelector_To_api_SecretKeySelector,
 		autoConvert_v1_SecretVolumeSource_To_api_SecretVolumeSource,
 		autoConvert_v1_SecurityContext_To_api_SecurityContext,
 		autoConvert_v1_TCPSocketAction_To_api_TCPSocketAction,
@@ -4589,13 +5369,13 @@ func init() {
 		autoConvert_v1beta1_ClusterAutoscalerList_To_extensions_ClusterAutoscalerList,
 		autoConvert_v1beta1_ClusterAutoscalerSpec_To_extensions_ClusterAutoscalerSpec,
 		autoConvert_v1beta1_ClusterAutoscaler_To_extensions_ClusterAutoscaler,
-		autoConvert_v1beta1_ConfigMapList_To_extensions_ConfigMapList,
-		autoConvert_v1beta1_ConfigMap_To_extensions_ConfigMap,
 		autoConvert_v1beta1_DaemonSetList_To_extensions_DaemonSetList,
 		autoConvert_v1beta1_DaemonSetSpec_To_extensions_DaemonSetSpec,
 		autoConvert_v1beta1_DaemonSetStatus_To_extensions_DaemonSetStatus,
+		autoConvert_v1beta1_DaemonSetUpdateStrategy_To_extensions_DaemonSetUpdateStrategy,
 		autoConvert_v1beta1_DaemonSet_To_extensions_DaemonSet,
 		autoConvert_v1beta1_DeploymentList_To_extensions_DeploymentList,
+		autoConvert_v1beta1_DeploymentRollback_To_extensions_DeploymentRollback,
 		autoConvert_v1beta1_DeploymentSpec_To_extensions_DeploymentSpec,
 		autoConvert_v1beta1_DeploymentStatus_To_extensions_DeploymentStatus,
 		autoConvert_v1beta1_Deployment_To_extensions_Deployment,
@@ -4605,24 +5385,38 @@ func init() {
 		autoConvert_v1beta1_HorizontalPodAutoscalerSpec_To_extensions_HorizontalPodAutoscalerSpec,
 		autoConvert_v1beta1_HorizontalPodAutoscalerStatus_To_extensions_HorizontalPodAutoscalerStatus,
 		autoConvert_v1beta1_HorizontalPodAutoscaler_To_extensions_HorizontalPodAutoscaler,
+		autoConvert_v1beta1_HostPortRange_To_extensions_HostPortRange,
+		autoConvert_v1beta1_IDRange_To_extensions_IDRange,
 		autoConvert_v1beta1_IngressBackend_To_extensions_IngressBackend,
 		autoConvert_v1beta1_IngressList_To_extensions_IngressList,
 		autoConvert_v1beta1_IngressRuleValue_To_extensions_IngressRuleValue,
 		autoConvert_v1beta1_IngressRule_To_extensions_IngressRule,
 		autoConvert_v1beta1_IngressSpec_To_extensions_IngressSpec,
 		autoConvert_v1beta1_IngressStatus_To_extensions_IngressStatus,
+		autoConvert_v1beta1_IngressTLS_To_extensions_IngressTLS,
 		autoConvert_v1beta1_Ingress_To_extensions_Ingress,
 		autoConvert_v1beta1_JobCondition_To_extensions_JobCondition,
 		autoConvert_v1beta1_JobList_To_extensions_JobList,
 		autoConvert_v1beta1_JobSpec_To_extensions_JobSpec,
 		autoConvert_v1beta1_JobStatus_To_extensions_JobStatus,
 		autoConvert_v1beta1_Job_To_extensions_Job,
-		autoConvert_v1beta1_LabelSelectorRequirement_To_extensions_LabelSelectorRequirement,
-		autoConvert_v1beta1_LabelSelector_To_extensions_LabelSelector,
+		autoConvert_v1beta1_LabelSelectorRequirement_To_unversioned_LabelSelectorRequirement,
+		autoConvert_v1beta1_LabelSelector_To_unversioned_LabelSelector,
 		autoConvert_v1beta1_ListOptions_To_api_ListOptions,
 		autoConvert_v1beta1_NodeUtilization_To_extensions_NodeUtilization,
+		autoConvert_v1beta1_PodSecurityPolicyList_To_extensions_PodSecurityPolicyList,
+		autoConvert_v1beta1_PodSecurityPolicySpec_To_extensions_PodSecurityPolicySpec,
+		autoConvert_v1beta1_PodSecurityPolicy_To_extensions_PodSecurityPolicy,
+		autoConvert_v1beta1_ReplicaSetList_To_extensions_ReplicaSetList,
+		autoConvert_v1beta1_ReplicaSetSpec_To_extensions_ReplicaSetSpec,
+		autoConvert_v1beta1_ReplicaSetStatus_To_extensions_ReplicaSetStatus,
+		autoConvert_v1beta1_ReplicaSet_To_extensions_ReplicaSet,
 		autoConvert_v1beta1_ReplicationControllerDummy_To_extensions_ReplicationControllerDummy,
+		autoConvert_v1beta1_RollbackConfig_To_extensions_RollbackConfig,
+		autoConvert_v1beta1_RollingUpdateDaemonSet_To_extensions_RollingUpdateDaemonSet,
 		autoConvert_v1beta1_RollingUpdateDeployment_To_extensions_RollingUpdateDeployment,
+		autoConvert_v1beta1_RunAsUserStrategyOptions_To_extensions_RunAsUserStrategyOptions,
+		autoConvert_v1beta1_SELinuxContextStrategyOptions_To_extensions_SELinuxContextStrategyOptions,
 		autoConvert_v1beta1_ScaleSpec_To_extensions_ScaleSpec,
 		autoConvert_v1beta1_ScaleStatus_To_extensions_ScaleStatus,
 		autoConvert_v1beta1_Scale_To_extensions_Scale,

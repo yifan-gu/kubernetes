@@ -33,6 +33,8 @@ import (
 	"k8s.io/kubernetes/pkg/api/testapi"
 	"k8s.io/kubernetes/pkg/api/unversioned"
 	apiutil "k8s.io/kubernetes/pkg/api/util"
+	utilnet "k8s.io/kubernetes/pkg/util/net"
+
 	"k8s.io/kubernetes/pkg/apis/extensions"
 	"k8s.io/kubernetes/pkg/genericapiserver"
 	"k8s.io/kubernetes/pkg/kubelet/client"
@@ -44,10 +46,8 @@ import (
 	etcdstorage "k8s.io/kubernetes/pkg/storage/etcd"
 	"k8s.io/kubernetes/pkg/storage/etcd/etcdtest"
 	etcdtesting "k8s.io/kubernetes/pkg/storage/etcd/testing"
-	"k8s.io/kubernetes/pkg/util"
 	"k8s.io/kubernetes/pkg/util/intstr"
 
-	"github.com/emicklei/go-restful"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/net/context"
 )
@@ -65,9 +65,9 @@ func setUp(t *testing.T) (Master, *etcdtesting.EtcdTestServer, Config, *assert.A
 	storageVersions := make(map[string]string)
 	storageDestinations := genericapiserver.NewStorageDestinations()
 	storageDestinations.AddAPIGroup(
-		api.GroupName, etcdstorage.NewEtcdStorage(server.Client, testapi.Default.Codec(), etcdtest.PathPrefix()))
+		api.GroupName, etcdstorage.NewEtcdStorage(server.Client, testapi.Default.Codec(), etcdtest.PathPrefix(), false))
 	storageDestinations.AddAPIGroup(
-		extensions.GroupName, etcdstorage.NewEtcdStorage(server.Client, testapi.Extensions.Codec(), etcdtest.PathPrefix()))
+		extensions.GroupName, etcdstorage.NewEtcdStorage(server.Client, testapi.Extensions.Codec(), etcdtest.PathPrefix(), false))
 
 	config.StorageDestinations = storageDestinations
 	storageVersions[api.GroupName] = testapi.Default.GroupVersion().String()
@@ -82,12 +82,19 @@ func setUp(t *testing.T) (Master, *etcdtesting.EtcdTestServer, Config, *assert.A
 func newMaster(t *testing.T) (*Master, *etcdtesting.EtcdTestServer, Config, *assert.Assertions) {
 	_, etcdserver, config, assert := setUp(t)
 
+	config.Serializer = api.Codecs
 	config.KubeletClient = client.FakeKubeletClient{}
+	config.APIPrefix = "/api"
+	config.APIGroupPrefix = "/apis"
 
 	config.ProxyDialer = func(network, addr string) (net.Conn, error) { return nil, nil }
 	config.ProxyTLSClientConfig = &tls.Config{}
 
-	master := New(&config)
+	master, err := New(&config)
+	if err != nil {
+		t.Fatalf("Error in bringing up the master: %v", err)
+	}
+
 	return master, etcdserver, config, assert
 }
 
@@ -110,7 +117,7 @@ func TestNew(t *testing.T) {
 	assert.Equal(master.ServiceReadWriteIP, config.ServiceReadWriteIP)
 
 	// These functions should point to the same memory location
-	masterDialer, _ := util.Dialer(master.ProxyTransport)
+	masterDialer, _ := utilnet.Dialer(master.ProxyTransport)
 	masterDialerFunc := fmt.Sprintf("%p", masterDialer)
 	configDialerFunc := fmt.Sprintf("%p", config.ProxyDialer)
 	assert.Equal(masterDialerFunc, configDialerFunc)
@@ -164,7 +171,7 @@ func TestNewBootstrapController(t *testing.T) {
 	master, etcdserver, _, assert := setUp(t)
 	defer etcdserver.Terminate(t)
 
-	portRange := util.PortRange{Base: 10, Size: 10}
+	portRange := utilnet.PortRange{Base: 10, Size: 10}
 
 	master.namespaceRegistry = namespace.NewRegistry(nil)
 	master.serviceRegistry = registrytest.NewServiceRegistry()
@@ -267,30 +274,28 @@ func TestDiscoveryAtAPIS(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	expectGroupName := extensions.GroupName
-	expectVersions := []unversioned.GroupVersionForDiscovery{
+	extensionsGroupName := extensions.GroupName
+	extensionsVersions := []unversioned.GroupVersionForDiscovery{
 		{
 			GroupVersion: testapi.Extensions.GroupVersion().String(),
 			Version:      testapi.Extensions.GroupVersion().Version,
 		},
 	}
-	expectPreferredVersion := unversioned.GroupVersionForDiscovery{
+	extensionsPreferredVersion := unversioned.GroupVersionForDiscovery{
 		GroupVersion: config.StorageVersions[extensions.GroupName],
 		Version:      apiutil.GetVersion(config.StorageVersions[extensions.GroupName]),
 	}
-	assert.Equal(expectGroupName, groupList.Groups[0].Name)
-	assert.Equal(expectVersions, groupList.Groups[0].Versions)
-	assert.Equal(expectPreferredVersion, groupList.Groups[0].PreferredVersion)
+	assert.Equal(extensionsGroupName, groupList.Groups[0].Name)
+	assert.Equal(extensionsVersions, groupList.Groups[0].Versions)
+	assert.Equal(extensionsPreferredVersion, groupList.Groups[0].PreferredVersion)
 
 	thirdPartyGV := unversioned.GroupVersionForDiscovery{GroupVersion: "company.com/v1", Version: "v1"}
-	master.thirdPartyResources["/apis/company.com/v1"] = thirdPartyEntry{
-		nil,
+	master.addThirdPartyResourceStorage("/apis/company.com/v1", nil,
 		unversioned.APIGroup{
 			Name:             "company.com",
 			Versions:         []unversioned.GroupVersionForDiscovery{thirdPartyGV},
 			PreferredVersion: thirdPartyGV,
-		},
-	}
+		})
 
 	resp, err = http.Get(server.URL + "/apis")
 	if !assert.NoError(err) {
@@ -307,10 +312,13 @@ func TestDiscoveryAtAPIS(t *testing.T) {
 	thirdPartyGroupName := "company.com"
 	thirdPartyExpectVersions := []unversioned.GroupVersionForDiscovery{thirdPartyGV}
 
-	assert.Equal(thirdPartyGroupName, groupList.Groups[1].Name)
-	assert.Equal(thirdPartyExpectVersions, groupList.Groups[1].Versions)
-	assert.Equal(thirdPartyGV, groupList.Groups[1].PreferredVersion)
-
+	assert.Equal(2, len(groupList.Groups))
+	assert.Equal(thirdPartyGroupName, groupList.Groups[0].Name)
+	assert.Equal(thirdPartyExpectVersions, groupList.Groups[0].Versions)
+	assert.Equal(thirdPartyGV, groupList.Groups[0].PreferredVersion)
+	assert.Equal(extensionsGroupName, groupList.Groups[1].Name)
+	assert.Equal(extensionsVersions, groupList.Groups[1].Versions)
+	assert.Equal(extensionsPreferredVersion, groupList.Groups[1].PreferredVersion)
 }
 
 var versionsToTest = []string{"v1", "v3"}
@@ -331,9 +339,8 @@ type FooList struct {
 }
 
 func initThirdParty(t *testing.T, version string) (*Master, *etcdtesting.EtcdTestServer, *httptest.Server, *assert.Assertions) {
-	master, etcdserver, _, assert := setUp(t)
+	master, etcdserver, _, assert := newMaster(t)
 
-	master.thirdPartyResources = map[string]thirdPartyEntry{}
 	api := &extensions.ThirdPartyResource{
 		ObjectMeta: api.ObjectMeta{
 			Name: "foo.company.com",
@@ -345,15 +352,14 @@ func initThirdParty(t *testing.T, version string) (*Master, *etcdtesting.EtcdTes
 			},
 		},
 	}
-	master.HandlerContainer = restful.NewContainer()
-	master.thirdPartyStorage = etcdstorage.NewEtcdStorage(etcdserver.Client, testapi.Extensions.Codec(), etcdtest.PathPrefix())
+	master.thirdPartyStorage = etcdstorage.NewEtcdStorage(etcdserver.Client, testapi.Extensions.Codec(), etcdtest.PathPrefix(), false)
 
 	if !assert.NoError(master.InstallThirdPartyResource(api)) {
 		t.FailNow()
 	}
 
 	server := httptest.NewServer(master.HandlerContainer.ServeMux)
-	return &master, etcdserver, server, assert
+	return master, etcdserver, server, assert
 }
 
 func TestInstallThirdPartyAPIList(t *testing.T) {
@@ -400,7 +406,8 @@ func testInstallThirdPartyAPIListVersion(t *testing.T, version string) {
 	for _, test := range tests {
 		func() {
 			master, etcdserver, server, assert := initThirdParty(t, version)
-			defer server.Close()
+			// TODO: Uncomment when fix #19254
+			// defer server.Close()
 			defer etcdserver.Terminate(t)
 
 			if test.items != nil {
@@ -494,7 +501,6 @@ func decodeResponse(resp *http.Response, obj interface{}) error {
 	if err != nil {
 		return err
 	}
-
 	if err := json.Unmarshal(data, obj); err != nil {
 		return err
 	}
@@ -509,7 +515,8 @@ func TestInstallThirdPartyAPIGet(t *testing.T) {
 
 func testInstallThirdPartyAPIGetVersion(t *testing.T, version string) {
 	master, etcdserver, server, assert := initThirdParty(t, version)
-	defer server.Close()
+	// TODO: Uncomment when fix #19254
+	// defer server.Close()
 	defer etcdserver.Terminate(t)
 
 	expectedObj := Foo{
@@ -556,7 +563,8 @@ func TestInstallThirdPartyAPIPost(t *testing.T) {
 
 func testInstallThirdPartyAPIPostForVersion(t *testing.T, version string) {
 	master, etcdserver, server, assert := initThirdParty(t, version)
-	defer server.Close()
+	// TODO: Uncomment when fix #19254
+	// defer server.Close()
 	defer etcdserver.Terminate(t)
 
 	inputObj := Foo{
@@ -621,7 +629,8 @@ func TestInstallThirdPartyAPIDelete(t *testing.T) {
 
 func testInstallThirdPartyAPIDeleteVersion(t *testing.T, version string) {
 	master, etcdserver, server, assert := initThirdParty(t, version)
-	defer server.Close()
+	// TODO: Uncomment when fix #19254
+	// defer server.Close()
 	defer etcdserver.Terminate(t)
 
 	expectedObj := Foo{
@@ -698,7 +707,8 @@ func TestInstallThirdPartyResourceRemove(t *testing.T) {
 
 func testInstallThirdPartyResourceRemove(t *testing.T, version string) {
 	master, etcdserver, server, assert := initThirdParty(t, version)
-	defer server.Close()
+	// TODO: Uncomment when fix #19254
+	// defer server.Close()
 	defer etcdserver.Terminate(t)
 
 	expectedObj := Foo{

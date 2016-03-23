@@ -19,11 +19,13 @@ package app
 // This file exists to force the desired plugin implementations to be linked.
 import (
 	// Credential providers
+	_ "k8s.io/kubernetes/pkg/credentialprovider/aws"
 	_ "k8s.io/kubernetes/pkg/credentialprovider/gcp"
 	// Network plugins
 	"k8s.io/kubernetes/pkg/kubelet/network"
 	"k8s.io/kubernetes/pkg/kubelet/network/cni"
 	"k8s.io/kubernetes/pkg/kubelet/network/exec"
+	"k8s.io/kubernetes/pkg/kubelet/network/kubenet"
 	// Volume plugins
 	"k8s.io/kubernetes/pkg/volume"
 	"k8s.io/kubernetes/pkg/volume/aws_ebs"
@@ -43,7 +45,7 @@ import (
 	"k8s.io/kubernetes/pkg/volume/persistent_claim"
 	"k8s.io/kubernetes/pkg/volume/rbd"
 	"k8s.io/kubernetes/pkg/volume/secret"
-	//Cloud providers
+	// Cloud providers
 	_ "k8s.io/kubernetes/pkg/cloudprovider/providers"
 )
 
@@ -87,6 +89,7 @@ func ProbeNetworkPlugins(pluginDir string) []network.NetworkPlugin {
 	// for each existing plugin, add to the list
 	allPlugins = append(allPlugins, exec.ProbeNetworkPlugins(pluginDir)...)
 	allPlugins = append(allPlugins, cni.ProbeNetworkPlugins(pluginDir)...)
+	allPlugins = append(allPlugins, kubenet.NewPlugin())
 
 	return allPlugins
 }

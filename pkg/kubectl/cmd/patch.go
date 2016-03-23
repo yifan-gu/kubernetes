@@ -70,6 +70,7 @@ func NewCmdPatch(f *cmdutil.Factory, out io.Writer) *cobra.Command {
 	cmd.Flags().StringP("patch", "p", "", "The patch to be applied to the resource JSON file.")
 	cmd.MarkFlagRequired("patch")
 	cmdutil.AddOutputFlagsForMutation(cmd)
+	cmdutil.AddRecordFlag(cmd)
 
 	usage := "Filename, directory, or URL to a file identifying the resource to update"
 	kubectl.AddJsonFilenameFlag(cmd, &options.Filenames, usage)
@@ -92,7 +93,7 @@ func RunPatch(f *cmdutil.Factory, out io.Writer, cmd *cobra.Command, args []stri
 	}
 
 	mapper, typer := f.Object()
-	r := resource.NewBuilder(mapper, typer, f.ClientMapperForCommand()).
+	r := resource.NewBuilder(mapper, typer, resource.ClientMapperFunc(f.ClientForMapping), f.Decoder(true)).
 		ContinueOnError().
 		NamespaceParam(cmdNamespace).DefaultNamespace().
 		FilenameParam(enforceNamespace, options.Filenames...).
@@ -114,7 +115,7 @@ func RunPatch(f *cmdutil.Factory, out io.Writer, cmd *cobra.Command, args []stri
 	info := infos[0]
 	name, namespace := info.Name, info.Namespace
 	mapping := info.ResourceMapping()
-	client, err := f.RESTClient(mapping)
+	client, err := f.ClientForMapping(mapping)
 	if err != nil {
 		return err
 	}
@@ -123,6 +124,16 @@ func RunPatch(f *cmdutil.Factory, out io.Writer, cmd *cobra.Command, args []stri
 	_, err = helper.Patch(namespace, name, api.StrategicMergePatchType, patchBytes)
 	if err != nil {
 		return err
+	}
+	if cmdutil.ShouldRecord(cmd, info) {
+		patchBytes, err = cmdutil.ChangeResourcePatch(info, f.Command())
+		if err != nil {
+			return err
+		}
+		_, err = helper.Patch(namespace, name, api.StrategicMergePatchType, patchBytes)
+		if err != nil {
+			return err
+		}
 	}
 	cmdutil.PrintSuccess(mapper, shortOutput, out, "", name, "patched")
 	return nil

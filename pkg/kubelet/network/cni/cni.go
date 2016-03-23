@@ -28,7 +28,6 @@ import (
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	"k8s.io/kubernetes/pkg/kubelet/dockertools"
 	"k8s.io/kubernetes/pkg/kubelet/network"
-	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
 )
 
 const (
@@ -98,16 +97,19 @@ func (plugin *cniNetworkPlugin) Init(host network.Host) error {
 	return nil
 }
 
+func (plugin *cniNetworkPlugin) Event(name string, details map[string]interface{}) {
+}
+
 func (plugin *cniNetworkPlugin) Name() string {
 	return CNIPluginName
 }
 
-func (plugin *cniNetworkPlugin) SetUpPod(namespace string, name string, id kubetypes.DockerID) error {
+func (plugin *cniNetworkPlugin) SetUpPod(namespace string, name string, id kubecontainer.DockerID) error {
 	runtime, ok := plugin.host.GetRuntime().(*dockertools.DockerManager)
 	if !ok {
 		return fmt.Errorf("CNI execution called on non-docker runtime")
 	}
-	netns, err := runtime.GetNetNs(id.ContainerID())
+	netns, err := runtime.GetNetNS(id.ContainerID())
 	if err != nil {
 		return err
 	}
@@ -121,12 +123,12 @@ func (plugin *cniNetworkPlugin) SetUpPod(namespace string, name string, id kubet
 	return err
 }
 
-func (plugin *cniNetworkPlugin) TearDownPod(namespace string, name string, id kubetypes.DockerID) error {
+func (plugin *cniNetworkPlugin) TearDownPod(namespace string, name string, id kubecontainer.DockerID) error {
 	runtime, ok := plugin.host.GetRuntime().(*dockertools.DockerManager)
 	if !ok {
 		return fmt.Errorf("CNI execution called on non-docker runtime")
 	}
-	netns, err := runtime.GetNetNs(id.ContainerID())
+	netns, err := runtime.GetNetNS(id.ContainerID())
 	if err != nil {
 		return err
 	}
@@ -136,7 +138,7 @@ func (plugin *cniNetworkPlugin) TearDownPod(namespace string, name string, id ku
 
 // TODO: Use the addToNetwork function to obtain the IP of the Pod. That will assume idempotent ADD call to the plugin.
 // Also fix the runtime's call to Status function to be done only in the case that the IP is lost, no need to do periodic calls
-func (plugin *cniNetworkPlugin) Status(namespace string, name string, id kubetypes.DockerID) (*network.PodNetworkStatus, error) {
+func (plugin *cniNetworkPlugin) Status(namespace string, name string, id kubecontainer.DockerID) (*network.PodNetworkStatus, error) {
 	runtime, ok := plugin.host.GetRuntime().(*dockertools.DockerManager)
 	if !ok {
 		return nil, fmt.Errorf("CNI execution called on non-docker runtime")

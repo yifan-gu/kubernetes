@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/apis/extensions"
 	"k8s.io/kubernetes/pkg/fields"
 	"k8s.io/kubernetes/pkg/labels"
@@ -27,6 +28,7 @@ import (
 	"k8s.io/kubernetes/pkg/registry/registrytest"
 	"k8s.io/kubernetes/pkg/runtime"
 	etcdtesting "k8s.io/kubernetes/pkg/storage/etcd/testing"
+	"k8s.io/kubernetes/pkg/util/intstr"
 )
 
 func newStorage(t *testing.T) (*REST, *StatusREST, *etcdtesting.EtcdTestServer) {
@@ -42,8 +44,8 @@ func newValidDaemonSet() *extensions.DaemonSet {
 			Namespace: api.NamespaceDefault,
 		},
 		Spec: extensions.DaemonSetSpec{
-			Selector: &extensions.LabelSelector{MatchLabels: map[string]string{"a": "b"}},
-			Template: &api.PodTemplateSpec{
+			Selector: &unversioned.LabelSelector{MatchLabels: map[string]string{"a": "b"}},
+			Template: api.PodTemplateSpec{
 				ObjectMeta: api.ObjectMeta{
 					Labels: map[string]string{"a": "b"},
 				},
@@ -59,6 +61,13 @@ func newValidDaemonSet() *extensions.DaemonSet {
 					DNSPolicy:     api.DNSClusterFirst,
 				},
 			},
+			UpdateStrategy: extensions.DaemonSetUpdateStrategy{
+				Type: extensions.RollingUpdateDaemonSetStrategyType,
+				RollingUpdate: &extensions.RollingUpdateDaemonSet{
+					MaxUnavailable: intstr.FromInt(1),
+				},
+			},
+			UniqueLabelKey: "foo-label",
 		},
 	}
 }
@@ -77,8 +86,16 @@ func TestCreate(t *testing.T) {
 		// invalid (invalid selector)
 		&extensions.DaemonSet{
 			Spec: extensions.DaemonSetSpec{
-				Selector: &extensions.LabelSelector{MatchLabels: map[string]string{}},
+				Selector: &unversioned.LabelSelector{MatchLabels: map[string]string{}},
 				Template: validDaemonSet.Spec.Template,
+			},
+		},
+		// invalid update strategy
+		&extensions.DaemonSet{
+			Spec: extensions.DaemonSetSpec{
+				Selector:       validDaemonSet.Spec.Selector,
+				Template:       validDaemonSet.Spec.Template,
+				UniqueLabelKey: validDaemonSet.Spec.UniqueLabelKey,
 			},
 		},
 	)
@@ -115,7 +132,12 @@ func TestUpdate(t *testing.T) {
 		},
 		func(obj runtime.Object) runtime.Object {
 			object := obj.(*extensions.DaemonSet)
-			object.Spec.Selector = &extensions.LabelSelector{MatchLabels: map[string]string{}}
+			object.Spec.Selector = &unversioned.LabelSelector{MatchLabels: map[string]string{}}
+			return object
+		},
+		func(obj runtime.Object) runtime.Object {
+			object := obj.(*extensions.DaemonSet)
+			object.Spec.UpdateStrategy = extensions.DaemonSetUpdateStrategy{}
 			return object
 		},
 	)

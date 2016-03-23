@@ -20,7 +20,11 @@ import (
 	"testing"
 
 	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/testapi"
+	apitesting "k8s.io/kubernetes/pkg/api/testing"
+	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/apis/extensions"
+	"k8s.io/kubernetes/pkg/labels"
 )
 
 func TestJobStrategy(t *testing.T) {
@@ -32,7 +36,7 @@ func TestJobStrategy(t *testing.T) {
 		t.Errorf("Job should not allow create on update")
 	}
 
-	validSelector := &extensions.LabelSelector{
+	validSelector := &unversioned.LabelSelector{
 		MatchLabels: map[string]string{"a": "b"},
 	}
 	validPodTemplateSpec := api.PodTemplateSpec{
@@ -97,7 +101,7 @@ func TestJobStatusStrategy(t *testing.T) {
 	if StatusStrategy.AllowCreateOnUpdate() {
 		t.Errorf("Job should not allow create on update")
 	}
-	validSelector := &extensions.LabelSelector{
+	validSelector := &unversioned.LabelSelector{
 		MatchLabels: map[string]string{"a": "b"},
 	}
 	validPodTemplateSpec := api.PodTemplateSpec{
@@ -157,4 +161,13 @@ func TestJobStatusStrategy(t *testing.T) {
 	if newJob.ResourceVersion != "9" {
 		t.Errorf("Incoming resource version on update should not be mutated")
 	}
+}
+
+func TestSelectableFieldLabelConversions(t *testing.T) {
+	apitesting.TestSelectableFieldLabelConversionsOfKind(t,
+		testapi.Extensions.GroupVersion().String(),
+		"Job",
+		labels.Set(JobToSelectableFields(&extensions.Job{})),
+		nil,
+	)
 }

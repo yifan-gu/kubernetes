@@ -22,15 +22,16 @@ import (
 	"strings"
 	"testing"
 
+	"k8s.io/kubernetes/cmd/kube-apiserver/app/options"
 	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/meta"
 	"k8s.io/kubernetes/pkg/apis/extensions"
 	"k8s.io/kubernetes/pkg/genericapiserver"
+	"k8s.io/kubernetes/pkg/runtime"
 	"k8s.io/kubernetes/pkg/storage"
 )
 
 func TestLongRunningRequestRegexp(t *testing.T) {
-	regexp := regexp.MustCompile(defaultLongRunningRequestRE)
+	regexp := regexp.MustCompile(options.NewAPIServer().LongRunningRequestRE)
 	dontMatch := []string{
 		"/api/v1/watch-namespace/",
 		"/api/v1/namespace-proxy/",
@@ -132,7 +133,7 @@ func TestUpdateEtcdOverrides(t *testing.T) {
 	}
 
 	for _, test := range testCases {
-		newEtcd := func(serverList []string, _ meta.VersionInterfacesFunc, _, _ string) (storage.Interface, error) {
+		newEtcd := func(serverList []string, _ runtime.NegotiatedSerializer, _, _ string, _ bool) (storage.Interface, error) {
 			if !reflect.DeepEqual(test.servers, serverList) {
 				t.Errorf("unexpected server list, expected: %#v, got: %#v", test.servers, serverList)
 			}
@@ -140,7 +141,7 @@ func TestUpdateEtcdOverrides(t *testing.T) {
 		}
 		storageDestinations := genericapiserver.NewStorageDestinations()
 		override := test.apigroup + "/" + test.resource + "#" + strings.Join(test.servers, ";")
-		updateEtcdOverrides([]string{override}, storageVersions, "", &storageDestinations, newEtcd)
+		updateEtcdOverrides([]string{override}, storageVersions, "", false, &storageDestinations, newEtcd)
 		apigroup, ok := storageDestinations.APIGroups[test.apigroup]
 		if !ok {
 			t.Errorf("apigroup: %s not created", test.apigroup)
@@ -232,10 +233,10 @@ func TestParseRuntimeConfig(t *testing.T) {
 		},
 	}
 	for _, test := range testCases {
-		s := &APIServer{
+		s := &options.APIServer{
 			RuntimeConfig: test.runtimeConfig,
 		}
-		apiGroupVersionOverrides, err := s.parseRuntimeConfig()
+		apiGroupVersionOverrides, err := parseRuntimeConfig(s)
 
 		if err == nil && test.err {
 			t.Fatalf("expected error for test: %q", test)

@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/client/unversioned/testclient"
+	"k8s.io/kubernetes/pkg/client/testing/fake"
 	fakecloud "k8s.io/kubernetes/pkg/cloudprovider/providers/fake"
 	"k8s.io/kubernetes/pkg/types"
 )
@@ -65,8 +65,8 @@ func TestCreateExternalLoadBalancer(t *testing.T) {
 					Type: api.ServiceTypeLoadBalancer,
 				},
 			},
-			expectErr:           true,
-			expectCreateAttempt: false,
+			expectErr:           false,
+			expectCreateAttempt: true,
 		},
 		{
 			service: &api.Service{
@@ -90,7 +90,7 @@ func TestCreateExternalLoadBalancer(t *testing.T) {
 	for _, item := range table {
 		cloud := &fakecloud.FakeCloud{}
 		cloud.Region = region
-		client := &testclient.Fake{}
+		client := &fake.Clientset{}
 		controller := New(cloud, client, "test-cluster")
 		controller.init()
 		cloud.Calls = nil     // ignore any cloud calls made in init()
@@ -210,7 +210,7 @@ func TestUpdateNodesInExternalLoadBalancer(t *testing.T) {
 		cloud := &fakecloud.FakeCloud{}
 
 		cloud.Region = region
-		client := &testclient.Fake{}
+		client := &fake.Clientset{}
 		controller := New(cloud, client, "test-cluster2")
 		controller.init()
 		cloud.Calls = nil // ignore any cloud calls made in init()

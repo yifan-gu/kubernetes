@@ -693,24 +693,24 @@ func TestLoadBalancerMatchesClusterRegion(t *testing.T) {
 	badELBRegion := "bad-elb-region"
 	errorMessage := fmt.Sprintf("requested load balancer region '%s' does not match cluster region '%s'", badELBRegion, c.region)
 
-	_, _, err = c.GetTCPLoadBalancer("elb-name", badELBRegion)
+	_, _, err = c.GetLoadBalancer("elb-name", badELBRegion)
 	if err == nil || err.Error() != errorMessage {
-		t.Errorf("Expected GetTCPLoadBalancer region mismatch error.")
+		t.Errorf("Expected GetLoadBalancer region mismatch error.")
 	}
 
-	_, err = c.EnsureTCPLoadBalancer("elb-name", badELBRegion, nil, nil, nil, api.ServiceAffinityNone)
+	_, err = c.EnsureLoadBalancer("elb-name", badELBRegion, nil, nil, nil, api.ServiceAffinityNone)
 	if err == nil || err.Error() != errorMessage {
-		t.Errorf("Expected EnsureTCPLoadBalancer region mismatch error.")
+		t.Errorf("Expected EnsureLoadBalancer region mismatch error.")
 	}
 
-	err = c.EnsureTCPLoadBalancerDeleted("elb-name", badELBRegion)
+	err = c.EnsureLoadBalancerDeleted("elb-name", badELBRegion)
 	if err == nil || err.Error() != errorMessage {
-		t.Errorf("Expected EnsureTCPLoadBalancerDeleted region mismatch error.")
+		t.Errorf("Expected EnsureLoadBalancerDeleted region mismatch error.")
 	}
 
-	err = c.UpdateTCPLoadBalancer("elb-name", badELBRegion, nil)
+	err = c.UpdateLoadBalancer("elb-name", badELBRegion, nil)
 	if err == nil || err.Error() != errorMessage {
-		t.Errorf("Expected UpdateTCPLoadBalancer region mismatch error.")
+		t.Errorf("Expected UpdateLoadBalancer region mismatch error.")
 	}
 }
 
@@ -798,4 +798,68 @@ func TestSubnetIDsinVPC(t *testing.T) {
 		return
 	}
 
+}
+
+func TestIpPermissionExistsHandlesMultipleGroupIds(t *testing.T) {
+	oldIpPermission := ec2.IpPermission{
+		UserIdGroupPairs: []*ec2.UserIdGroupPair{
+			{GroupId: aws.String("firstGroupId")},
+			{GroupId: aws.String("secondGroupId")},
+			{GroupId: aws.String("thirdGroupId")},
+		},
+	}
+
+	existingIpPermission := ec2.IpPermission{
+		UserIdGroupPairs: []*ec2.UserIdGroupPair{
+			{GroupId: aws.String("secondGroupId")},
+		},
+	}
+
+	newIpPermission := ec2.IpPermission{
+		UserIdGroupPairs: []*ec2.UserIdGroupPair{
+			{GroupId: aws.String("fourthGroupId")},
+		},
+	}
+
+	equals := ipPermissionExists(&existingIpPermission, &oldIpPermission, false)
+	if !equals {
+		t.Errorf("Should have been considered equal since first is in the second array of groups")
+	}
+
+	equals = ipPermissionExists(&newIpPermission, &oldIpPermission, false)
+	if equals {
+		t.Errorf("Should have not been considered equal since first is not in the second array of groups")
+	}
+}
+
+func TestIpPermissionExistsHandlesMultipleGroupIdsWithUserIds(t *testing.T) {
+	oldIpPermission := ec2.IpPermission{
+		UserIdGroupPairs: []*ec2.UserIdGroupPair{
+			{GroupId: aws.String("firstGroupId"), UserId: aws.String("firstUserId")},
+			{GroupId: aws.String("secondGroupId"), UserId: aws.String("secondUserId")},
+			{GroupId: aws.String("thirdGroupId"), UserId: aws.String("thirdUserId")},
+		},
+	}
+
+	existingIpPermission := ec2.IpPermission{
+		UserIdGroupPairs: []*ec2.UserIdGroupPair{
+			{GroupId: aws.String("secondGroupId"), UserId: aws.String("secondUserId")},
+		},
+	}
+
+	newIpPermission := ec2.IpPermission{
+		UserIdGroupPairs: []*ec2.UserIdGroupPair{
+			{GroupId: aws.String("secondGroupId"), UserId: aws.String("anotherUserId")},
+		},
+	}
+
+	equals := ipPermissionExists(&existingIpPermission, &oldIpPermission, true)
+	if !equals {
+		t.Errorf("Should have been considered equal since first is in the second array of groups")
+	}
+
+	equals = ipPermissionExists(&newIpPermission, &oldIpPermission, true)
+	if equals {
+		t.Errorf("Should have not been considered equal since first is not in the second array of groups")
+	}
 }

@@ -18,13 +18,148 @@ package wait
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"k8s.io/kubernetes/pkg/util"
 )
+
+func TestUntil(t *testing.T) {
+	ch := make(chan struct{})
+	close(ch)
+	Until(func() {
+		t.Fatal("should not have been invoked")
+	}, 0, ch)
+
+	ch = make(chan struct{})
+	called := make(chan struct{})
+	go func() {
+		Until(func() {
+			called <- struct{}{}
+		}, 0, ch)
+		close(called)
+	}()
+	<-called
+	close(ch)
+	<-called
+}
+
+func TestUntilReturnsImmediately(t *testing.T) {
+	now := time.Now()
+	ch := make(chan struct{})
+	Until(func() {
+		close(ch)
+	}, 30*time.Second, ch)
+	if now.Add(25 * time.Second).Before(time.Now()) {
+		t.Errorf("Until did not return immediately when the stop chan was closed inside the func")
+	}
+}
+
+func TestJitterUntil(t *testing.T) {
+	ch := make(chan struct{})
+	// if a channel is closed JitterUntil never calls function f
+	// and returns imidiatelly
+	close(ch)
+	JitterUntil(func() {
+		t.Fatal("should not have been invoked")
+	}, 0, 1.0, ch)
+
+	ch = make(chan struct{})
+	called := make(chan struct{})
+	go func() {
+		JitterUntil(func() {
+			called <- struct{}{}
+		}, 0, 1.0, ch)
+		close(called)
+	}()
+	<-called
+	close(ch)
+	<-called
+}
+
+func TestJitterUntilReturnsImmediately(t *testing.T) {
+	now := time.Now()
+	ch := make(chan struct{})
+	JitterUntil(func() {
+		close(ch)
+	}, 30*time.Second, 1.0, ch)
+	if now.Add(25 * time.Second).Before(time.Now()) {
+		t.Errorf("JitterUntil did not return immediately when the stop chan was closed inside the func")
+	}
+}
+
+func TestJitterUntilNegativeFactor(t *testing.T) {
+	now := time.Now()
+	ch := make(chan struct{})
+	called := make(chan struct{})
+	received := make(chan struct{})
+	go func() {
+		JitterUntil(func() {
+			called <- struct{}{}
+			<-received
+		}, time.Second, -30.0, ch)
+	}()
+	// first loop
+	<-called
+	received <- struct{}{}
+	// second loop
+	<-called
+	close(ch)
+	received <- struct{}{}
+
+	// it should take at most 2 seconds + some overhead, not 3
+	if now.Add(3 * time.Second).Before(time.Now()) {
+		t.Errorf("JitterUntil did not returned after predefined period with negative jitter factor when the stop chan was closed inside the func")
+	}
+
+}
+
+func TestExponentialBackoff(t *testing.T) {
+	opts := Backoff{Factor: 1.0, Steps: 3}
+
+	// waits up to steps
+	i := 0
+	err := ExponentialBackoff(opts, func() (bool, error) {
+		i++
+		return false, nil
+	})
+	if err != ErrWaitTimeout || i != opts.Steps {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	// returns immediately
+	i = 0
+	err = ExponentialBackoff(opts, func() (bool, error) {
+		i++
+		return true, nil
+	})
+	if err != nil || i != 1 {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	// returns immediately on error
+	testErr := fmt.Errorf("some other error")
+	err = ExponentialBackoff(opts, func() (bool, error) {
+		return false, testErr
+	})
+	if err != testErr {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	// invoked multiple times
+	i = 1
+	err = ExponentialBackoff(opts, func() (bool, error) {
+		if i < opts.Steps {
+			i++
+			return false, nil
+		}
+		return true, nil
+	})
+	if err != nil || i != opts.Steps {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
 
 func TestPoller(t *testing.T) {
 	done := make(chan struct{})
@@ -40,7 +175,7 @@ DRAIN:
 				break DRAIN
 			}
 			count++
-		case <-time.After(util.ForeverTestTimeout):
+		case <-time.After(ForeverTestTimeout):
 			t.Errorf("unexpected timeout after poll")
 		}
 	}
@@ -186,7 +321,7 @@ func TestPollForever(t *testing.T) {
 			if !open {
 				t.Fatalf("did not expect channel to be closed")
 			}
-		case <-time.After(util.ForeverTestTimeout):
+		case <-time.After(ForeverTestTimeout):
 			t.Fatalf("channel did not return at least once within the poll interval")
 		}
 	}
@@ -266,14 +401,14 @@ func TestWaitFor(t *testing.T) {
 func TestWaitForWithDelay(t *testing.T) {
 	done := make(chan struct{})
 	defer close(done)
-	WaitFor(poller(time.Millisecond, util.ForeverTestTimeout), func() (bool, error) {
+	WaitFor(poller(time.Millisecond, ForeverTestTimeout), func() (bool, error) {
 		time.Sleep(10 * time.Millisecond)
 		return true, nil
 	}, done)
 	// If polling goroutine doesn't see the done signal it will leak timers.
 	select {
 	case done <- struct{}{}:
-	case <-time.After(util.ForeverTestTimeout):
+	case <-time.After(ForeverTestTimeout):
 		t.Errorf("expected an ack of the done signal.")
 	}
 }

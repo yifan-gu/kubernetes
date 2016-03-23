@@ -57,7 +57,7 @@ type FakeDockerClient struct {
 
 func NewFakeDockerClient() *FakeDockerClient {
 	return &FakeDockerClient{
-		VersionInfo:   docker.Env{"Version=1.1.3", "ApiVersion=1.15"},
+		VersionInfo:   docker.Env{"Version=1.8.1", "ApiVersion=1.20"},
 		Errors:        make(map[string]error),
 		RemovedImages: sets.String{},
 		ContainerMap:  make(map[string]*docker.Container),
@@ -250,14 +250,14 @@ func (f *FakeDockerClient) CreateContainer(c docker.CreateContainerOptions) (*do
 	// Docker likes to add a '/', so copy that behavior.
 	name := "/" + c.Name
 	f.Created = append(f.Created, name)
-	// The newest container should be in front, because we assume so in GetAPIPodStatus()
+	// The newest container should be in front, because we assume so in GetPodStatus()
 	f.ContainerList = append([]docker.APIContainers{
 		{ID: name, Names: []string{name}, Image: c.Config.Image, Labels: c.Config.Labels},
 	}, f.ContainerList...)
 	container := docker.Container{ID: name, Name: name, Config: c.Config}
 	containerCopy := container
 	f.ContainerMap[name] = &containerCopy
-	f.normalSleep(200, 50, 50)
+	f.normalSleep(100, 25, 25)
 	return &container, nil
 }
 
@@ -282,6 +282,7 @@ func (f *FakeDockerClient) StartContainer(id string, hostConfig *docker.HostConf
 	}
 	container.NetworkSettings = &docker.NetworkSettings{IPAddress: "2.3.4.5"}
 	f.ContainerMap[id] = container
+	f.updateContainerStatus(id, statusRunningPrefix)
 	f.normalSleep(200, 50, 50)
 	return nil
 }
@@ -299,7 +300,7 @@ func (f *FakeDockerClient) StopContainer(id string, timeout uint) error {
 	var newList []docker.APIContainers
 	for _, container := range f.ContainerList {
 		if container.ID == id {
-			// The newest exited container should be in front. Because we assume so in GetAPIPodStatus()
+			// The newest exited container should be in front. Because we assume so in GetPodStatus()
 			f.ExitedContainerList = append([]docker.APIContainers{container}, f.ExitedContainerList...)
 			continue
 		}
@@ -322,6 +323,7 @@ func (f *FakeDockerClient) StopContainer(id string, timeout uint) error {
 		container.State.Running = false
 	}
 	f.ContainerMap[id] = container
+	f.updateContainerStatus(id, statusExitedPrefix)
 	f.normalSleep(200, 50, 50)
 	return nil
 }
@@ -410,6 +412,14 @@ func (f *FakeDockerClient) RemoveImage(image string) error {
 		f.RemovedImages.Insert(image)
 	}
 	return err
+}
+
+func (f *FakeDockerClient) updateContainerStatus(id, status string) {
+	for i := range f.ContainerList {
+		if f.ContainerList[i].ID == id {
+			f.ContainerList[i].Status = status
+		}
+	}
 }
 
 // FakeDockerPuller is a stub implementation of DockerPuller.

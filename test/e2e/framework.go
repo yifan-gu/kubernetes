@@ -19,6 +19,7 @@ package e2e
 import (
 	"bytes"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -136,23 +137,9 @@ func (f *Framework) afterEach() {
 		Failf("All nodes should be ready after test, %v", err)
 	}
 
-	if testContext.DeleteNamespace {
-		By(fmt.Sprintf("Destroying namespace %q for this suite.", f.Namespace.Name))
-
-		timeout := 5 * time.Minute
-		if f.NamespaceDeletionTimeout != 0 {
-			timeout = f.NamespaceDeletionTimeout
-		}
-		if err := deleteNS(f.Client, f.Namespace.Name, timeout); err != nil {
-			Failf("Couldn't delete ns %q: %s", f.Namespace.Name, err)
-		}
-	} else {
-		Logf("Found DeleteNamespace=false, skipping namespace deletion!")
-	}
-
 	summaries := make([]TestDataSummary, 0)
 	if testContext.GatherKubeSystemResourceUsageData {
-		summaries = append(summaries, f.gatherer.stopAndSummarize([]int{50, 90, 99, 100}, f.addonResourceConstraints))
+		summaries = append(summaries, f.gatherer.stopAndSummarize([]int{90, 99}, f.addonResourceConstraints))
 	}
 
 	if testContext.GatherLogsSizes {
@@ -171,9 +158,23 @@ func (f *Framework) afterEach() {
 			if err != nil {
 				Logf("MetricsGrabber failed grab metrics. Skipping metrics gathering.")
 			} else {
-				summaries = append(summaries, (*metricsForE2E)(&received))
+				summaries = append(summaries, (*MetricsForE2E)(&received))
 			}
 		}
+	}
+
+	if testContext.DeleteNamespace {
+		By(fmt.Sprintf("Destroying namespace %q for this suite.", f.Namespace.Name))
+
+		timeout := 5 * time.Minute
+		if f.NamespaceDeletionTimeout != 0 {
+			timeout = f.NamespaceDeletionTimeout
+		}
+		if err := deleteNS(f.Client, f.Namespace.Name, timeout); err != nil {
+			Failf("Couldn't delete ns %q: %s", f.Namespace.Name, err)
+		}
+	} else {
+		Logf("Found DeleteNamespace=false, skipping namespace deletion!")
 	}
 
 	outputTypes := strings.Split(testContext.OutputPrintType, ",")
@@ -185,7 +186,9 @@ func (f *Framework) afterEach() {
 			}
 		case "json":
 			for i := range summaries {
-				Logf(summaries[i].PrintJSON())
+				typeName := reflect.TypeOf(summaries[i]).String()
+				Logf("%v JSON\n%v", typeName[strings.LastIndex(typeName, ".")+1:len(typeName)], summaries[i].PrintJSON())
+				Logf("Finished")
 			}
 		default:
 			Logf("Unknown ouptut type: %v. Skipping.", printType)
@@ -195,6 +198,11 @@ func (f *Framework) afterEach() {
 	// Paranoia-- prevent reuse!
 	f.Namespace = nil
 	f.Client = nil
+}
+
+// WaitForPodTerminated waits for the pod to be terminated with the given reason.
+func (f *Framework) WaitForPodTerminated(podName, reason string) error {
+	return waitForPodTerminatedInNamespace(f.Client, podName, reason, f.Namespace.Name)
 }
 
 // WaitForPodRunning waits for the pod to run in the namespace.

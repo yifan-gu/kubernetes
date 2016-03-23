@@ -103,6 +103,9 @@ Currently there are two API groups in use:
    `apiVersion: v1`.
 1. the "extensions" group, which is at REST path `/apis/extensions/$VERSION`, and which uses
   `apiVersion: extensions/$VERSION` (e.g. currently `apiVersion: extensions/v1beta1`).
+  This holds types which will probably move to another API group eventually.
+1. the "componentconfig" and "metrics" API groups.
+
 
 In the future we expect that there will be more API groups, all at REST path `/apis/$API_GROUP` and
 using `apiVersion: $API_GROUP/$VERSION`.  We expect that there will be a way for [third parties to
@@ -110,7 +113,7 @@ create their own API groups](design/extending-api.md), and to avoid naming colli
 
 ## Enabling resources in the extensions group
 
-Jobs, Ingress and HorizontalPodAutoscalers are enabled by default.
+HorizontalPodAutoscalers, Jobs, Ingress and ReplicaSets are enabled by default.
 Other extensions resources can be enabled by setting runtime-config on
 apiserver. runtime-config accepts comma separated values. For ex: to enable deployments and disable jobs, set
 `--runtime-config=extensions/v1beta1/deployments=true,extensions/v1beta1/jobs=false`

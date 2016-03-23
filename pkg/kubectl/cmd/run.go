@@ -83,6 +83,7 @@ func NewCmdRun(f *cmdutil.Factory, cmdIn io.Reader, cmdOut, cmdErr io.Writer) *c
 	cmdutil.AddPrinterFlags(cmd)
 	addRunFlags(cmd)
 	cmdutil.AddApplyAnnotationFlags(cmd)
+	cmdutil.AddRecordFlag(cmd)
 	return cmd
 }
 
@@ -167,6 +168,11 @@ func Run(f *cmdutil.Factory, cmdIn io.Reader, cmdOut, cmdErr io.Writer, cmd *cob
 
 	params["env"] = cmdutil.GetFlagStringSlice(cmd, "env")
 
+	obj, _, mapper, mapping, err := createGeneratedObject(f, cmd, generator, names, params, cmdutil.GetFlagString(cmd, "overrides"), namespace)
+	if err != nil {
+		return err
+	}
+
 	if cmdutil.GetFlagBool(cmd, "expose") {
 		serviceGenerator := cmdutil.GetFlagString(cmd, "service-generator")
 		if len(serviceGenerator) == 0 {
@@ -175,11 +181,6 @@ func Run(f *cmdutil.Factory, cmdIn io.Reader, cmdOut, cmdErr io.Writer, cmd *cob
 		if err := generateService(f, cmd, args, serviceGenerator, params, namespace, cmdOut); err != nil {
 			return err
 		}
-	}
-
-	obj, _, mapper, mapping, err := createGeneratedObject(f, cmd, generator, names, params, cmdutil.GetFlagString(cmd, "overrides"), namespace)
-	if err != nil {
-		return err
 	}
 
 	attachFlag := cmd.Flags().Lookup("attach")
@@ -236,7 +237,7 @@ func Run(f *cmdutil.Factory, cmdIn io.Reader, cmdOut, cmdErr io.Writer, cmd *cob
 				return err
 			}
 			_, typer := f.Object()
-			r := resource.NewBuilder(mapper, typer, f.ClientMapperForCommand()).
+			r := resource.NewBuilder(mapper, typer, resource.ClientMapperFunc(f.ClientForMapping), f.Decoder(true)).
 				ContinueOnError().
 				NamespaceParam(namespace).DefaultNamespace().
 				ResourceNames(mapping.Resource, name).
@@ -409,7 +410,8 @@ func createGeneratedObject(f *cmdutil.Factory, cmd *cobra.Command, generator kub
 	}
 
 	if len(overrides) > 0 {
-		obj, err = cmdutil.Merge(obj, overrides, groupVersionKind.Kind)
+		codec := runtime.NewCodec(f.JSONEncoder(), f.Decoder(true))
+		obj, err = cmdutil.Merge(codec, obj, overrides, groupVersionKind.Kind)
 		if err != nil {
 			return nil, "", nil, nil, err
 		}
@@ -419,20 +421,34 @@ func createGeneratedObject(f *cmdutil.Factory, cmd *cobra.Command, generator kub
 	if err != nil {
 		return nil, "", nil, nil, err
 	}
-	client, err := f.RESTClient(mapping)
+	client, err := f.ClientForMapping(mapping)
 	if err != nil {
 		return nil, "", nil, nil, err
 	}
 
+	annotations, err := mapping.MetadataAccessor.Annotations(obj)
+	if err != nil {
+		return nil, "", nil, nil, err
+	}
+	if cmdutil.GetRecordFlag(cmd) || len(annotations[kubectl.ChangeCauseAnnotation]) > 0 {
+		if err := cmdutil.RecordChangeCause(obj, f.Command()); err != nil {
+			return nil, "", nil, nil, err
+		}
+	}
 	// TODO: extract this flag to a central location, when such a location exists.
 	if !cmdutil.GetFlagBool(cmd, "dry-run") {
-		resourceMapper := &resource.Mapper{ObjectTyper: typer, RESTMapper: mapper, ClientMapper: f.ClientMapperForCommand()}
+		resourceMapper := &resource.Mapper{
+			ObjectTyper:  typer,
+			RESTMapper:   mapper,
+			ClientMapper: resource.ClientMapperFunc(f.ClientForMapping),
+			Decoder:      f.Decoder(true),
+		}
 		info, err := resourceMapper.InfoForObject(obj)
 		if err != nil {
 			return nil, "", nil, nil, err
 		}
 
-		if err := kubectl.CreateOrUpdateAnnotation(cmdutil.GetFlagBool(cmd, cmdutil.ApplyAnnotationsFlag), info); err != nil {
+		if err := kubectl.CreateOrUpdateAnnotation(cmdutil.GetFlagBool(cmd, cmdutil.ApplyAnnotationsFlag), info, f.JSONEncoder()); err != nil {
 			return nil, "", nil, nil, err
 		}
 

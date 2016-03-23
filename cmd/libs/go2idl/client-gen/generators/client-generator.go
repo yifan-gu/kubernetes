@@ -18,28 +18,52 @@ limitations under the License.
 package generators
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 
 	"k8s.io/kubernetes/cmd/libs/go2idl/args"
+	"k8s.io/kubernetes/cmd/libs/go2idl/client-gen/generators/fake"
 	"k8s.io/kubernetes/cmd/libs/go2idl/generator"
 	"k8s.io/kubernetes/cmd/libs/go2idl/namer"
 	"k8s.io/kubernetes/cmd/libs/go2idl/types"
+	"k8s.io/kubernetes/pkg/api/unversioned"
 
 	"github.com/golang/glog"
 )
 
+// ClientGenArgs is a wrapper for arguments to client-gen.
+type ClientGenArgs struct {
+	// TODO: we should make another type declaration of GroupVersion out of the
+	// unversioned package, which is part of our API. Tools like client-gen
+	// shouldn't depend on an API.
+	GroupVersions []unversioned.GroupVersion
+	// ClientsetName is the name of the clientset to be generated. It's
+	// populated from command-line arguments.
+	ClientsetName string
+	// ClientsetOutputPath is the path the clientset will be generated at. It's
+	// populated from command-line arguments.
+	ClientsetOutputPath string
+	// ClientsetOnly determines if we should generate the clients for groups and
+	// types along with the clientset. It's populated from command-line
+	// arguments.
+	ClientsetOnly bool
+	// FakeClient determines if client-gen generates the fake clients.
+	FakeClient bool
+}
+
 // NameSystems returns the name system used by the generators in this package.
 func NameSystems() namer.NameSystems {
 	pluralExceptions := map[string]string{
-		"Endpoints":       "Endpoints",
-		"ComponentStatus": "ComponentStatus",
+		"Endpoints": "Endpoints",
 	}
 	return namer.NameSystems{
-		"public":        namer.NewPublicNamer(0),
-		"private":       namer.NewPrivateNamer(0),
-		"raw":           namer.NewRawNamer("", nil),
-		"publicPlural":  namer.NewPublicPluralNamer(pluralExceptions),
-		"privatePlural": namer.NewPrivatePluralNamer(pluralExceptions),
+		"public":             namer.NewPublicNamer(0),
+		"private":            namer.NewPrivateNamer(0),
+		"raw":                namer.NewRawNamer("", nil),
+		"publicPlural":       namer.NewPublicPluralNamer(pluralExceptions),
+		"privatePlural":      namer.NewPrivatePluralNamer(pluralExceptions),
+		"allLowercasePlural": namer.NewAllLowercasePluralNamer(pluralExceptions),
 	}
 }
 
@@ -49,8 +73,8 @@ func DefaultNameSystem() string {
 	return "public"
 }
 
-func packageForGroup(group string, version string, typeList []*types.Type, basePath string, boilerplate []byte) generator.Package {
-	outputPackagePath := filepath.Join(basePath, group, version)
+func packageForGroup(group string, version string, typeList []*types.Type, packageBasePath string, srcTreePath string, boilerplate []byte) generator.Package {
+	outputPackagePath := filepath.Join(packageBasePath, group, version)
 	return &generator.DefaultPackage{
 		PackageName: version,
 		PackagePath: outputPackagePath,
@@ -70,13 +94,7 @@ func packageForGroup(group string, version string, typeList []*types.Type, baseP
 			for _, t := range typeList {
 				generators = append(generators, &genClientForType{
 					DefaultGen: generator.DefaultGen{
-						// Use the privatized version of the
-						// type name as the file name.
-						//
-						// TODO: make a namer that converts
-						// camelCase to '-' separation for file
-						// names?
-						OptionalName: c.Namers["private"].Name(t),
+						OptionalName: strings.ToLower(c.Namers["private"].Name(t)),
 					},
 					outputPackage: outputPackagePath,
 					group:         group,
@@ -94,10 +112,49 @@ func packageForGroup(group string, version string, typeList []*types.Type, baseP
 				types:         typeList,
 				imports:       generator.NewImportTracker(),
 			})
+
+			expansionFileName := "generated_expansion"
+			// To avoid overriding user's manual modification, only generate the expansion file if it doesn't exist.
+			if _, err := os.Stat(filepath.Join(srcTreePath, outputPackagePath, expansionFileName+".go")); os.IsNotExist(err) {
+				generators = append(generators, &genExpansion{
+					DefaultGen: generator.DefaultGen{
+						OptionalName: expansionFileName,
+					},
+					types: typeList,
+				})
+			}
+
 			return generators
 		},
 		FilterFunc: func(c *generator.Context, t *types.Type) bool {
 			return types.ExtractCommentTags("+", t.SecondClosestCommentLines)["genclient"] == "true"
+		},
+	}
+}
+
+func packageForClientset(customArgs ClientGenArgs, typedClientBasePath string, boilerplate []byte) generator.Package {
+	return &generator.DefaultPackage{
+		PackageName: customArgs.ClientsetName,
+		PackagePath: filepath.Join(customArgs.ClientsetOutputPath, customArgs.ClientsetName),
+		HeaderText:  boilerplate,
+		PackageDocumentation: []byte(
+			`// This package has the automatically generated clientset.
+`),
+		// GeneratorFunc returns a list of generators. Each generator generates a
+		// single file.
+		GeneratorFunc: func(c *generator.Context) (generators []generator.Generator) {
+			generators = []generator.Generator{
+				&genClientset{
+					DefaultGen: generator.DefaultGen{
+						OptionalName: "clientset",
+					},
+					groupVersions:   customArgs.GroupVersions,
+					typedClientPath: typedClientBasePath,
+					outputPackage:   customArgs.ClientsetName,
+					imports:         generator.NewImportTracker(),
+				},
+			}
+			return generators
 		},
 	}
 }
@@ -117,9 +174,9 @@ func Packages(context *generator.Context, arguments *args.GeneratorArgs) generat
 				continue
 			}
 			group := filepath.Base(t.Name.Package)
-			// Special case for the legacy API.
+			// Special case for the core API.
 			if group == "api" {
-				group = "legacy"
+				group = "core"
 			}
 			if _, found := groupToTypes[group]; !found {
 				groupToTypes[group] = []*types.Type{}
@@ -128,10 +185,29 @@ func Packages(context *generator.Context, arguments *args.GeneratorArgs) generat
 		}
 	}
 
+	customArgs, ok := arguments.CustomArgs.(ClientGenArgs)
+	if !ok {
+		glog.Fatalf("cannot convert arguments.CustomArgs to ClientGenArgs")
+	}
+
 	var packageList []generator.Package
+
+	packageList = append(packageList, packageForClientset(customArgs, arguments.OutputPackagePath, boilerplate))
+	if customArgs.FakeClient {
+		packageList = append(packageList, fake.PackageForClientset(arguments.OutputPackagePath, customArgs.GroupVersions, boilerplate))
+	}
+
+	// If --clientset-only=true, we don't regenerate the individual typed clients.
+	if customArgs.ClientsetOnly {
+		return generator.Packages(packageList)
+	}
+
 	orderer := namer.Orderer{namer.NewPrivateNamer(0)}
 	for group, types := range groupToTypes {
-		packageList = append(packageList, packageForGroup(group, "unversioned", orderer.OrderTypes(types), arguments.OutputPackagePath, boilerplate))
+		packageList = append(packageList, packageForGroup(group, "unversioned", orderer.OrderTypes(types), arguments.OutputPackagePath, arguments.OutputBase, boilerplate))
+		if customArgs.FakeClient {
+			packageList = append(packageList, fake.PackageForGroup(group, "unversioned", orderer.OrderTypes(types), arguments.OutputPackagePath, arguments.OutputBase, boilerplate))
+		}
 	}
 
 	return generator.Packages(packageList)

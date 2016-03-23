@@ -49,13 +49,17 @@ func TestSecrets(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		m.Handler.ServeHTTP(w, req)
 	}))
-	defer s.Close()
+	// TODO: Uncomment when fix #19254
+	// defer s.Close()
 
 	masterConfig := framework.NewIntegrationTestMasterConfig()
-	m = master.New(masterConfig)
+	m, err := master.New(masterConfig)
+	if err != nil {
+		t.Fatalf("Error in bringing up the master: %v", err)
+	}
 
 	framework.DeleteAllEtcdKeys()
-	client := client.NewOrDie(&client.Config{Host: s.URL, GroupVersion: testapi.Default.GroupVersion()})
+	client := client.NewOrDie(&client.Config{Host: s.URL, ContentConfig: client.ContentConfig{GroupVersion: testapi.Default.GroupVersion()}})
 	DoTestSecrets(t, client)
 }
 

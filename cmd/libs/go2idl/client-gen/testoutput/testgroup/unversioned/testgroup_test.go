@@ -25,9 +25,9 @@ import (
 	_ "k8s.io/kubernetes/cmd/libs/go2idl/client-gen/testdata/apis/testgroup/install"
 	. "k8s.io/kubernetes/cmd/libs/go2idl/client-gen/testoutput/testgroup/unversioned"
 	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/latest"
 	"k8s.io/kubernetes/pkg/api/testapi"
 	"k8s.io/kubernetes/pkg/api/unversioned"
+	"k8s.io/kubernetes/pkg/apimachinery/registered"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
 	"k8s.io/kubernetes/pkg/client/unversioned/testclient/simple"
 	"k8s.io/kubernetes/pkg/labels"
@@ -40,7 +40,7 @@ func init() {
 		return
 	}
 	testapi.Groups[testgroup.SchemeGroupVersion.Group] = testapi.NewTestGroup(
-		unversioned.GroupVersion{Group: testgroup.SchemeGroupVersion.Group, Version: latest.GroupOrDie(testgroup.SchemeGroupVersion.Group).GroupVersion.Version},
+		registered.GroupOrDie(testgroup.SchemeGroupVersion.Group).GroupVersion,
 		testgroup.SchemeGroupVersion)
 	testHelper = testapi.Groups[testgroup.SchemeGroupVersion.Group]
 }
@@ -86,6 +86,29 @@ func TestUpdateTestType(t *testing.T) {
 				"name": "baz",
 			},
 		},
+	}
+	c := DecoratedSimpleClient{
+		simpleClient: simple.Client{
+			Request:  simple.Request{Method: "PUT", Path: testHelper.ResourcePath("testtypes", ns, "foo"), Query: simple.BuildQueryValues(nil)},
+			Response: simple.Response{StatusCode: http.StatusOK, Body: requestTestType},
+		},
+	}
+	receivedTestType, err := c.Setup(t).TestTypes(ns).Update(requestTestType)
+	c.simpleClient.Validate(t, receivedTestType, err)
+}
+
+func TestUpdateStatusTestType(t *testing.T) {
+	ns := api.NamespaceDefault
+	requestTestType := &testgroup.TestType{
+		ObjectMeta: api.ObjectMeta{
+			Name:            "foo",
+			ResourceVersion: "1",
+			Labels: map[string]string{
+				"foo":  "bar",
+				"name": "baz",
+			},
+		},
+		Status: testgroup.TestTypeStatus{"I'm in good status"},
 	}
 	c := DecoratedSimpleClient{
 		simpleClient: simple.Client{
@@ -213,4 +236,11 @@ func TestListTestTypesLabels(t *testing.T) {
 	options := api.ListOptions{LabelSelector: selector}
 	receivedTestTypeList, err := c.TestTypes(ns).List(options)
 	c.simpleClient.Validate(t, receivedTestTypeList, err)
+}
+
+func TestExpansionInterface(t *testing.T) {
+	c := New(nil)
+	if e, a := "hello!", c.TestTypes("").Hello(); e != a {
+		t.Errorf("expansion failed")
+	}
 }

@@ -32,8 +32,6 @@ import (
 	apitesting "k8s.io/kubernetes/pkg/api/testing"
 	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/api/v1"
-	_ "k8s.io/kubernetes/pkg/apis/extensions"
-	_ "k8s.io/kubernetes/pkg/apis/extensions/v1beta1"
 	"k8s.io/kubernetes/pkg/runtime"
 	"k8s.io/kubernetes/pkg/util"
 	"k8s.io/kubernetes/pkg/util/sets"
@@ -61,6 +59,8 @@ func fuzzInternalObject(t *testing.T, forVersion unversioned.GroupVersion, item 
 }
 
 func roundTrip(t *testing.T, codec runtime.Codec, item runtime.Object) {
+	//t.Logf("codec: %#v", codec)
+
 	printer := spew.ConfigState{DisableMethods: true}
 
 	name := reflect.TypeOf(item).Elem().Name()
@@ -81,8 +81,7 @@ func roundTrip(t *testing.T, codec runtime.Codec, item runtime.Object) {
 	}
 
 	obj3 := reflect.New(reflect.TypeOf(item).Elem()).Interface().(runtime.Object)
-	err = runtime.DecodeInto(codec, data, obj3)
-	if err != nil {
+	if err := runtime.DecodeInto(codec, data, obj3); err != nil {
 		t.Errorf("2: %v: %v", name, err)
 		return
 	}
@@ -93,12 +92,12 @@ func roundTrip(t *testing.T, codec runtime.Codec, item runtime.Object) {
 }
 
 // roundTripSame verifies the same source object is tested in all API versions.
-func roundTripSame(t *testing.T, item runtime.Object, except ...string) {
+func roundTripSame(t *testing.T, group testapi.TestGroup, item runtime.Object, except ...string) {
 	set := sets.NewString(except...)
 	seed := rand.Int63()
-	fuzzInternalObject(t, testapi.Default.InternalGroupVersion(), item, seed)
+	fuzzInternalObject(t, group.InternalGroupVersion(), item, seed)
 
-	version := *testapi.Default.GroupVersion()
+	version := *group.GroupVersion()
 	codecs := []runtime.Codec{}
 	for _, fn := range codecsToTest {
 		codec, err := fn(version, item)
@@ -122,9 +121,9 @@ func TestSpecificKind(t *testing.T) {
 	// api.Scheme.Log(t)
 	// defer api.Scheme.Log(nil)
 
-	kind := "Pod"
+	kind := "DaemonSet"
 	for i := 0; i < *fuzzIters; i++ {
-		doRoundTripTest(kind, t)
+		doRoundTripTest(testapi.Groups["extensions"], kind, t)
 		if t.Failed() {
 			break
 		}
@@ -141,7 +140,7 @@ func TestList(t *testing.T) {
 		t.Errorf("Couldn't make a %v? %v", kind, err)
 		return
 	}
-	roundTripSame(t, item)
+	roundTripSame(t, testapi.Default, item)
 }
 
 var nonRoundTrippableTypes = sets.NewString("ExportOptions")
@@ -153,34 +152,36 @@ func TestRoundTripTypes(t *testing.T) {
 	// api.Scheme.Log(t)
 	// defer api.Scheme.Log(nil)
 
-	for kind := range api.Scheme.KnownTypes(testapi.Default.InternalGroupVersion()) {
-		t.Logf("working on %v in %v", kind, testapi.Default.InternalGroupVersion())
-		if nonRoundTrippableTypes.Has(kind) {
-			continue
-		}
-		// Try a few times, since runTest uses random values.
-		for i := 0; i < *fuzzIters; i++ {
-			doRoundTripTest(kind, t)
-			if t.Failed() {
-				break
+	for groupKey, group := range testapi.Groups {
+		for kind := range api.Scheme.KnownTypes(group.InternalGroupVersion()) {
+			t.Logf("working on %v in %v", kind, groupKey)
+			if nonRoundTrippableTypes.Has(kind) {
+				continue
+			}
+			// Try a few times, since runTest uses random values.
+			for i := 0; i < *fuzzIters; i++ {
+				doRoundTripTest(group, kind, t)
+				if t.Failed() {
+					break
+				}
 			}
 		}
 	}
 }
 
-func doRoundTripTest(kind string, t *testing.T) {
-	item, err := api.Scheme.New(testapi.Default.InternalGroupVersion().WithKind(kind))
+func doRoundTripTest(group testapi.TestGroup, kind string, t *testing.T) {
+	item, err := api.Scheme.New(group.InternalGroupVersion().WithKind(kind))
 	if err != nil {
 		t.Fatalf("Couldn't make a %v? %v", kind, err)
 	}
 	if _, err := meta.TypeAccessor(item); err != nil {
 		t.Fatalf("%q is not a TypeMeta and cannot be tested - add it to nonRoundTrippableTypes: %v", kind, err)
 	}
-	if api.Scheme.Recognizes(testapi.Default.GroupVersion().WithKind(kind)) {
-		roundTripSame(t, item, nonRoundTrippableTypesByVersion[kind]...)
+	if api.Scheme.Recognizes(group.GroupVersion().WithKind(kind)) {
+		roundTripSame(t, group, item, nonRoundTrippableTypesByVersion[kind]...)
 	}
 	if !nonInternalRoundTrippableTypes.Has(kind) {
-		roundTrip(t, api.Codec, fuzzInternalObject(t, testapi.Default.InternalGroupVersion(), item, rand.Int63()))
+		roundTrip(t, group.Codec(), fuzzInternalObject(t, group.InternalGroupVersion(), item, rand.Int63()))
 	}
 }
 
@@ -200,8 +201,8 @@ func TestEncode_Ptr(t *testing.T) {
 		},
 	}
 	obj := runtime.Object(pod)
-	data, err := testapi.Default.Codec().Encode(obj)
-	obj2, err2 := testapi.Default.Codec().Decode(data)
+	data, err := runtime.Encode(testapi.Default.Codec(), obj)
+	obj2, err2 := runtime.Decode(testapi.Default.Codec(), data)
 	if err != nil || err2 != nil {
 		t.Fatalf("Failure: '%v' '%v'", err, err2)
 	}
@@ -216,11 +217,11 @@ func TestEncode_Ptr(t *testing.T) {
 
 func TestBadJSONRejection(t *testing.T) {
 	badJSONMissingKind := []byte(`{ }`)
-	if _, err := testapi.Default.Codec().Decode(badJSONMissingKind); err == nil {
+	if _, err := runtime.Decode(testapi.Default.Codec(), badJSONMissingKind); err == nil {
 		t.Errorf("Did not reject despite lack of kind field: %s", badJSONMissingKind)
 	}
 	badJSONUnknownType := []byte(`{"kind": "bar"}`)
-	if _, err1 := testapi.Default.Codec().Decode(badJSONUnknownType); err1 == nil {
+	if _, err1 := runtime.Decode(testapi.Default.Codec(), badJSONUnknownType); err1 == nil {
 		t.Errorf("Did not reject despite use of unknown type: %s", badJSONUnknownType)
 	}
 	/*badJSONKindMismatch := []byte(`{"kind": "Pod"}`)
@@ -240,14 +241,14 @@ func TestUnversionedTypes(t *testing.T) {
 
 	for _, obj := range testcases {
 		// Make sure the unversioned codec can encode
-		unversionedJSON, err := api.Codec.Encode(obj)
+		unversionedJSON, err := runtime.Encode(testapi.Default.Codec(), obj)
 		if err != nil {
 			t.Errorf("%v: unexpected error: %v", obj, err)
 			continue
 		}
 
 		// Make sure the versioned codec under test can decode
-		versionDecodedObject, err := testapi.Default.Codec().Decode(unversionedJSON)
+		versionDecodedObject, err := runtime.Decode(testapi.Default.Codec(), unversionedJSON)
 		if err != nil {
 			t.Errorf("%v: unexpected error: %v", obj, err)
 			continue
@@ -278,7 +279,7 @@ func BenchmarkEncodeCodec(b *testing.B) {
 	width := len(items)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := testapi.Default.Codec().Encode(&items[i%width]); err != nil {
+		if _, err := runtime.Encode(testapi.Default.Codec(), &items[i%width]); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -320,7 +321,7 @@ func BenchmarkDecodeCodec(b *testing.B) {
 	b.StopTimer()
 }
 
-func BenchmarkDecodeIntoCodec(b *testing.B) {
+func BenchmarkDecodeIntoExternalCodec(b *testing.B) {
 	codec := testapi.Default.Codec()
 	items := benchmarkItems()
 	width := len(items)
@@ -336,6 +337,29 @@ func BenchmarkDecodeIntoCodec(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		obj := v1.Pod{}
+		if err := runtime.DecodeInto(codec, encoded[i%width], &obj); err != nil {
+			b.Fatal(err)
+		}
+	}
+	b.StopTimer()
+}
+
+func BenchmarkDecodeIntoInternalCodec(b *testing.B) {
+	codec := testapi.Default.Codec()
+	items := benchmarkItems()
+	width := len(items)
+	encoded := make([][]byte, width)
+	for i := range items {
+		data, err := runtime.Encode(codec, &items[i])
+		if err != nil {
+			b.Fatal(err)
+		}
+		encoded[i] = data
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		obj := api.Pod{}
 		if err := runtime.DecodeInto(codec, encoded[i%width], &obj); err != nil {
 			b.Fatal(err)
 		}

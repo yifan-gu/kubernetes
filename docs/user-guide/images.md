@@ -47,9 +47,13 @@ The `image` property of a container supports the same syntax as the `docker` com
   - [Updating Images](#updating-images)
   - [Using a Private Registry](#using-a-private-registry)
     - [Using Google Container Registry](#using-google-container-registry)
+    - [Using AWS EC2 Container Registry](#using-aws-ec2-container-registry)
     - [Configuring Nodes to Authenticate to a Private Repository](#configuring-nodes-to-authenticate-to-a-private-repository)
     - [Pre-pulling Images](#pre-pulling-images)
     - [Specifying ImagePullSecrets on a Pod](#specifying-imagepullsecrets-on-a-pod)
+      - [Creating a Secret with a Docker Config](#creating-a-secret-with-a-docker-config)
+        - [Bypassing kubectl create secrets](#bypassing-kubectl-create-secrets)
+      - [Referring to an imagePullSecrets on a Pod](#referring-to-an-imagepullsecrets-on-a-pod)
     - [Use Cases](#use-cases)
 
 <!-- END MUNGE: GENERATED_TOC -->
@@ -96,6 +100,21 @@ The kubelet will authenticate to GCR using the instance's
 Google service account.  The service account on the instance
 will have a `https://www.googleapis.com/auth/devstorage.read_only`,
 so it can pull from the project's GCR, but not push.
+
+### Using AWS EC2 Container Registry
+
+Kubernetes has native support for the [AWS EC2 Container
+Registry](https://aws.amazon.com/ecr/), when nodes are AWS instances.
+
+Simply use the full image name (e.g. `ACCOUNT.dkr.ecr.REGION.amazonaws.com/imagename:tag`)
+in the Pod definition.
+
+All users of the cluster who can create pods will be able to run pods that use any of the
+images in the ECR registry.
+
+The kubelet will fetch and periodically refresh ECR credentials.  It needs the
+`ecr:GetAuthorizationToken` permission to do this.
+
 
 ### Configuring Nodes to Authenticate to a Private Repository
 
@@ -191,42 +210,40 @@ where node creation is automated.
 
 Kubernetes supports specifying registry keys on a pod.
 
-First, create a `.docker/config.json`, such as by running `docker login <registry.domain>`.
-Then put the resulting `.docker/config.json` file into a [secret resource](secrets.md).  For example:
+#### Creating a Secret with a Docker Config
+
+Run the following command, substituting the appropriate uppercase values:
 
 ```console
-$ docker login
-Username: janedoe
-Password: ●●●●●●●●●●●
-Email: jdoe@example.com
-WARNING: login credentials saved in /Users/jdoe/.docker/config.json.
-Login Succeeded
-
-$ echo $(cat ~/.docker/config.json)
-{ "https://index.docker.io/v1/": { "auth": "ZmFrZXBhc3N3b3JkMTIK", "email": "jdoe@example.com" } }
-
-$ cat ~/.docker/config.json | base64
-eyAiaHR0cHM6Ly9pbmRleC5kb2NrZXIuaW8vdjEvIjogeyAiYXV0aCI6ICJabUZyWlhCaGMzTjNiM0prTVRJSyIsICJlbWFpbCI6ICJqZG9lQGV4YW1wbGUuY29tIiB9IH0K
-
-$ cat > /tmp/image-pull-secret.yaml <<EOF
-apiVersion: v1
-kind: Secret
-metadata:
-  name: myregistrykey
-data:
-  .dockerconfigjson: eyAiaHR0cHM6Ly9pbmRleC5kb2NrZXIuaW8vdjEvIjogeyAiYXV0aCI6ICJabUZyWlhCaGMzTjNiM0prTVRJSyIsICJlbWFpbCI6ICJqZG9lQGV4YW1wbGUuY29tIiB9IH0K
-type: kubernetes.io/dockerconfigjson
-EOF
-
-$ kubectl create -f /tmp/image-pull-secret.yaml
-secrets/myregistrykey
+$ kubectl create secret docker-registry my-registry-secret --docker-server=DOCKER_REGISTRY_SERVER --docker-username=DOCKER_USER --docker-password=DOCKER_PASSWORD --docker-email=DOCKER_EMAIL
+secret "my-registry-secret" created.
 ```
+
+If you need access to multiple registries, you can create one secret for each registry.
+Kubelet will merge any `imagePullSecrets` into a single virtual `.docker/config.json`
+when pulling images for your Pods.
+
+Pods can only reference image pull secrets in their own namespace,
+so this process needs to be done one time per namespace.
+
+##### Bypassing kubectl create secrets
+
+If for some reason you need multiple items in a single `.docker/config.json` or need
+control not given by the above command, then you can [create a secret using
+json or yaml](secrets.md#creating-a-secret-manually).
+
+Be sure to:
+
+- set the name of the data item to `.dockerconfigjson`
+- base64 encode the docker file and paste that string, unbroken
+  as the value for field `data[".dockerconfigjson"]`
+- set `type` to `kubernetes.io/dockerconfigjson`
 
 If you get the error message `error: no objects passed to create`, it may mean the base64 encoded string is invalid.
 If you get an error message like `Secret "myregistrykey" is invalid: data[.dockerconfigjson]: invalid value ...` it means
 the data was successfully un-base64 encoded, but could not be parsed as a `.docker/config.json` file.
 
-This process needs to be done one time per namespace, or to any non-default service accounts you create.
+#### Referring to an imagePullSecrets on a Pod
 
 Now, you can create pods which reference that secret by adding an `imagePullSecrets`
 section to a pod definition.
@@ -245,13 +262,9 @@ spec:
 ```
 
 This needs to be done for each pod that is using a private registry.
+
 However, setting of this field can be automated by setting the imagePullSecrets
 in a [serviceAccount](service-accounts.md) resource.
-
-Currently, all pods will potentially have read access to any images which were
-pulled using imagePullSecrets.  That is, imagePullSecrets does *NOT* protect your
-images from being seen by other users in the cluster.  Our intent
-is to fix that.
 
 You can use this in conjunction with a per-node `.docker/config.json`.  The credentials
 will be merged.  This approach will work on Google Container Engine (GKE).
@@ -261,11 +274,11 @@ will be merged.  This approach will work on Google Container Engine (GKE).
 There are a number of solutions for configuring private registries.  Here are some
 common use cases and suggested solutions.
 
- 1. Cluster running only non-proprietary (e.g open-source) images.  No need to hide images.
+1. Cluster running only non-proprietary (e.g open-source) images.  No need to hide images.
    - Use public images on the Docker hub.
      - no configuration required
      - on GCE/GKE, a local mirror is automatically used for improved speed and availability
- 1. Cluster running some proprietary images which should be hidden to those outside the company, but
+1. Cluster running some proprietary images which should be hidden to those outside the company, but
    visible to all cluster users.
    - Use a hosted private [Docker registry](https://docs.docker.com/registry/)
      - may be hosted on the [Docker Hub](https://hub.docker.com/account/signup/), or elsewhere.
@@ -275,11 +288,14 @@ common use cases and suggested solutions.
    - Or, when on GCE/GKE, use the project's Google Container Registry.
      - will work better with cluster autoscaling than manual node configuration
    - Or, on a cluster where changing the node configuration is inconvenient, use `imagePullSecrets`.
-  1. Cluster with a proprietary images, a few of which require stricter access control
-     - Move sensitive data into a "Secret" resource, instead of packaging it in an image.
-     - DO NOT use imagePullSecrets for this use case yet.
-  1. A multi-tenant cluster where each tenant needs own private registry
-     - NOT supported yet.
+1. Cluster with a proprietary images, a few of which require stricter access control
+   - ensure [AlwaysPullImages admission controller](../../docs/admin/admission-controllers.md#alwayspullimages) is active, otherwise, all Pods potentially have access to all images
+   - Move sensitive data into a "Secret" resource, instead of packaging it in an image.
+1. A multi-tenant cluster where each tenant needs own private registry
+   - ensure [AlwaysPullImages admission controller](../../docs/admin/admission-controllers.md#alwayspullimages) is active, otherwise, all Pods of all tenants potentially have access to all images
+   - run a private registry with authorization required.
+   - generate registry credential for each tenant, put into secret, and populate secret to each tenant namespace.
+   - tenant adds that secret to imagePullSecrets of each namespace.
 
 
 <!-- BEGIN MUNGE: GENERATED_ANALYTICS -->

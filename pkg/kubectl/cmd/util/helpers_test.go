@@ -183,7 +183,7 @@ func TestMerge(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		out, err := Merge(test.obj, test.fragment, test.kind)
+		out, err := Merge(testapi.Default.Codec(), test.obj, test.fragment, test.kind)
 		if !test.expectErr {
 			if err != nil {
 				t.Errorf("testcase[%d], unexpected error: %v", i, err)
@@ -212,6 +212,7 @@ func (f *fileHandler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 
 func TestReadConfigData(t *testing.T) {
 	httpData := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	// TODO: Close() this server when fix #19254
 	server := httptest.NewServer(&fileHandler{data: httpData})
 
 	fileData := []byte{11, 12, 13, 14, 15, 16, 17, 18, 19}

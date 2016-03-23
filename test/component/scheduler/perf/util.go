@@ -39,26 +39,28 @@ import (
 // It returns scheduler config factory and destroyFunc which should be used to
 // remove resources after finished.
 // Notes on rate limiter:
-//   - The BindPodsRateLimiter is nil, meaning no rate limits.
 //   - client rate limit is set to 5000.
 func mustSetupScheduler() (schedulerConfigFactory *factory.ConfigFactory, destroyFunc func()) {
 	framework.DeleteAllEtcdKeys()
 
 	var m *master.Master
 	masterConfig := framework.NewIntegrationTestMasterConfig()
-	m = master.New(masterConfig)
+	m, err := master.New(masterConfig)
+	if err != nil {
+		panic("error in brining up the master: " + err.Error())
+	}
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		m.Handler.ServeHTTP(w, req)
 	}))
 
 	c := client.NewOrDie(&client.Config{
-		Host:         s.URL,
-		GroupVersion: testapi.Default.GroupVersion(),
-		QPS:          5000.0,
-		Burst:        5000,
+		Host:          s.URL,
+		ContentConfig: client.ContentConfig{GroupVersion: testapi.Default.GroupVersion()},
+		QPS:           5000.0,
+		Burst:         5000,
 	})
 
-	schedulerConfigFactory = factory.NewConfigFactory(c, nil, api.DefaultSchedulerName)
+	schedulerConfigFactory = factory.NewConfigFactory(c, api.DefaultSchedulerName)
 	schedulerConfig, err := schedulerConfigFactory.Create()
 	if err != nil {
 		panic("Couldn't create scheduler config")
@@ -71,7 +73,8 @@ func mustSetupScheduler() (schedulerConfigFactory *factory.ConfigFactory, destro
 	destroyFunc = func() {
 		glog.Infof("destroying")
 		close(schedulerConfig.StopEverything)
-		s.Close()
+		// TODO: Uncomment when fix #19254
+		// s.Close()
 		glog.Infof("destroyed")
 	}
 	return

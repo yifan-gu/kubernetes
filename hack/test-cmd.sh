@@ -28,9 +28,12 @@ source "${KUBE_ROOT}/hack/lib/test.sh"
 # Stops the running kubectl proxy, if there is one.
 function stop-proxy()
 {
+  [[ -n "${PROXY_PORT-}" ]] && kube::log::status "Stopping proxy on port ${PROXY_PORT}"
   [[ -n "${PROXY_PID-}" ]] && kill "${PROXY_PID}" 1>&2 2>/dev/null
+  [[ -n "${PROXY_PORT_FILE-}" ]] && rm -f ${PROXY_PORT_FILE}
   PROXY_PID=
   PROXY_PORT=
+  PROXY_PORT_FILE=
 }
 
 # Starts "kubect proxy" to test the client proxy. $1: api_prefix
@@ -38,22 +41,32 @@ function start-proxy()
 {
   stop-proxy
 
-  kube::log::status "Starting kubectl proxy"
+  PROXY_PORT_FILE=$(mktemp proxy-port.out.XXXXX)
+  kube::log::status "Starting kubectl proxy on random port; output file in ${PROXY_PORT_FILE}; args: ${1-}"
 
-  for retry in $(seq 1 3); do
-    PROXY_PORT=$(kube::util::get_random_port)
-    kube::log::status "On try ${retry}, use proxy port ${PROXY_PORT} if it's free"
-    if kube::util::test_host_port_free "127.0.0.1" "${PROXY_PORT}"; then
-      if [ $# -eq 0 ]; then
-        kubectl proxy -p ${PROXY_PORT} --www=. 1>&2 & break
-      else
-        kubectl proxy -p ${PROXY_PORT} --www=. --api-prefix="$1" 1>&2 & break
-      fi
+
+  if [ $# -eq 0 ]; then
+    kubectl proxy --port=0 --www=. 1>${PROXY_PORT_FILE} 2>&1 &
+  else
+    kubectl proxy --port=0 --www=. --api-prefix="$1" 1>${PROXY_PORT_FILE} 2>&1 &
+  fi
+  PROXY_PID=$!
+  PROXY_PORT=
+
+  local attempts=0
+  while [[ -z ${PROXY_PORT} ]]; do
+    if (( ${attempts} > 9 )); then
+      kill "${PROXY_PID}"
+      kube::log::error_exit "Couldn't start proxy. Failed to read port after ${attempts} tries. Got: $(cat ${PROXY_PORT_FILE})"
     fi
-    sleep 1;
+    sleep .5
+    kube::log::status "Attempt ${attempts} to read ${PROXY_PORT_FILE}..."
+    PROXY_PORT=$(sed 's/.*Starting to serve on 127.0.0.1:\([0-9]*\)$/\1/'< ${PROXY_PORT_FILE})
+    attempts=$((attempts+1))
   done
 
-  PROXY_PID=$!
+  kube::log::status "kubectl proxy running on port ${PROXY_PORT}"
+
   # We try checking kubectl proxy 30 times with 1s delays to avoid occasional
   # failures.
   if [ $# -eq 0 ]; then
@@ -161,10 +174,15 @@ kube::util::wait_for_url "http://127.0.0.1:${KUBELET_HEALTHZ_PORT}/healthz" "kub
 
 # Start kube-apiserver
 kube::log::status "Starting kube-apiserver"
+
+# Admission Controllers to invoke prior to persisting objects in cluster
+ADMISSION_CONTROL="NamespaceLifecycle,LimitRanger,ResourceQuota"
+
 KUBE_API_VERSIONS="v1,extensions/v1beta1" "${KUBE_OUTPUT_HOSTBIN}/kube-apiserver" \
   --address="127.0.0.1" \
   --public-address-override="127.0.0.1" \
   --port="${API_PORT}" \
+  --admission-control="${ADMISSION_CONTROL}" \
   --etcd-servers="http://${ETCD_HOST}:${ETCD_PORT}" \
   --public-address-override="127.0.0.1" \
   --kubelet-port=${KUBELET_PORT} \
@@ -228,6 +246,7 @@ runTests() {
   deployment_replicas=".spec.replicas"
   secret_data=".data"
   secret_type=".type"
+  deployment_image_field="(index .spec.template.spec.containers 0).image"
 
   # Passing no arguments to create is an error
   ! kubectl create
@@ -377,23 +396,6 @@ runTests() {
   kube::test::get_object_assert pods "{{range.items}}{{$id_field}}:{{end}}" 'redis-proxy:valid-pod:'
 
   ### Delete multiple PODs at once
-  # Pre-condition: valid-pod and redis-proxy PODs exist
-  kube::test::get_object_assert pods "{{range.items}}{{$id_field}}:{{end}}" 'redis-proxy:valid-pod:'
-  # Command
-  kubectl delete pods valid-pod redis-proxy "${kube_flags[@]}" --grace-period=0 # delete multiple pods at once
-  # Post-condition: no POD exists
-  kube::test::get_object_assert pods "{{range.items}}{{$id_field}}:{{end}}" ''
-
-  ### Create two PODs
-  # Pre-condition: no POD exists
-  kube::test::get_object_assert pods "{{range.items}}{{$id_field}}:{{end}}" ''
-  # Command
-  kubectl create -f docs/admin/limitrange/valid-pod.yaml "${kube_flags[@]}"
-  kubectl create -f examples/redis/redis-proxy.yaml "${kube_flags[@]}"
-  # Post-condition: valid-pod and redis-proxy PODs are created
-  kube::test::get_object_assert pods "{{range.items}}{{$id_field}}:{{end}}" 'redis-proxy:valid-pod:'
-
-  ### Stop multiple PODs at once
   # Pre-condition: valid-pod and redis-proxy PODs exist
   kube::test::get_object_assert pods "{{range.items}}{{$id_field}}:{{end}}" 'redis-proxy:valid-pod:'
   # Command
@@ -663,7 +665,7 @@ runTests() {
   # Pre-Condition: no Job exists
   kube::test::get_object_assert jobs "{{range.items}}{{$id_field}}:{{end}}" ''
   # Command
-  kubectl run pi --image=perl --restart=OnFailure -- perl -Mbignum=bpi -wle 'print bpi(20)' "${kube_flags[@]}"
+  kubectl run pi --generator=job/v1beta1 --image=perl --restart=OnFailure -- perl -Mbignum=bpi -wle 'print bpi(20)' "${kube_flags[@]}"
   # Post-Condition: Job "pi" is created 
   kube::test::get_object_assert jobs "{{range.items}}{{$id_field}}:{{end}}" 'pi:'
   # Clean up
@@ -676,7 +678,7 @@ runTests() {
   kube::test::get_object_assert deployment "{{range.items}}{{$id_field}}:{{end}}" 'nginx:'
   # Clean up 
   kubectl delete deployment nginx "${kube_flags[@]}"
-  kubectl delete rc -l deployment.kubernetes.io/podTemplateHash "${kube_flags[@]}"
+  kubectl delete rc -l pod-template-hash "${kube_flags[@]}"
 
   ##############
   # Namespaces #
@@ -684,7 +686,7 @@ runTests() {
 
   ### Create a new namespace
   # Pre-condition: only the "default" namespace exists
-  kube::test::get_object_assert 'namespaces' "{{range.items}}{{$id_field}}:{{end}}" 'default:'
+  kube::test::get_object_assert namespaces "{{range.items}}{{$id_field}}:{{end}}" 'default:'
   # Command
   kubectl create namespace my-namespace
   # Post-condition: namespace 'my-namespace' is created.
@@ -695,6 +697,14 @@ runTests() {
   ##############
   # Pods in Namespaces #
   ##############
+
+  ### Create a new namespace
+  # Pre-condition: the other namespace does not exist
+  kube::test::get_object_assert 'namespaces' '{{range.items}}{{ if eq $id_field \"other\" }}found{{end}}{{end}}:' ':'
+  # Command
+  kubectl create namespace other
+  # Post-condition: namespace 'other' is created.
+  kube::test::get_object_assert 'namespaces/other' "{{$id_field}}" 'other'
 
   ### Create POD valid-pod in specific namespace
   # Pre-condition: no POD exists
@@ -710,11 +720,21 @@ runTests() {
   # Command
   kubectl delete "${kube_flags[@]}" pod --namespace=other valid-pod --grace-period=0
   # Post-condition: valid-pod POD doesn't exist
-  kube::test::get_object_assert 'pods --namespace=other' "{{range.items}}{{$id_field}}:{{end}}" ''
+  kube::test::get_object_assert 'pods --namespace=other' "{{range.items}}{{$id_field}}:{{end}}" ''  
+  # Clean up
+  kubectl delete namespace other
 
   ##############
   # Secrets #
   ##############
+
+  ### Create a new namespace
+  # Pre-condition: the test-secrets namespace does not exist
+  kube::test::get_object_assert 'namespaces' '{{range.items}}{{ if eq $id_field \"test-secrets\" }}found{{end}}{{end}}:' ':'
+  # Command
+  kubectl create namespace test-secrets
+  # Post-condition: namespace 'test-secrets' is created.
+  kube::test::get_object_assert 'namespaces/test-secrets' "{{$id_field}}" 'test-secrets'
 
   ### Create a generic secret in a specific namespace
   # Pre-condition: no SECRET exists
@@ -739,6 +759,8 @@ runTests() {
   [[ "$(kubectl get secret/test-secret --namespace=test-secrets -o yaml "${kube_flags[@]}" | grep '.dockercfg:')" ]]
   # Clean-up
   kubectl delete secret test-secret --namespace=test-secrets
+  # Clean up
+  kubectl delete namespace test-secrets
 
   #################
   # Pod templates #
@@ -848,6 +870,12 @@ __EOF__
   # Post-condition: redis-master and redis-slave services are created
   kube::test::get_object_assert services "{{range.items}}{{$id_field}}:{{end}}" 'kubernetes:redis-master:redis-slave:'
 
+  ### Custom columns can be specified
+  # Pre-condition: generate output using custom columns
+  output_message=$(kubectl get services -o=custom-columns=NAME:.metadata.name,RSRC:.metadata.resourceVersion 2>&1 "${kube_flags[@]}")
+  # Post-condition: should contain name column
+  kube::test::if_has_string "${output_message}" 'redis-master'
+
   ### Delete multiple services at once
   # Pre-condition: redis-master and redis-slave services exist
   kube::test::get_object_assert services "{{range.items}}{{$id_field}}:{{end}}" 'kubernetes:redis-master:redis-slave:'
@@ -943,6 +971,19 @@ __EOF__
   kube::test::get_object_assert 'deployment nginx-deployment' "{{$deployment_replicas}}" '1'
   # Clean-up
   kubectl delete deployment/nginx-deployment "${kube_flags[@]}"
+  # TODO: Remove once deployment reaping is implemented
+  kubectl delete rc --all "${kube_flags[@]}"
+
+  ### Expose a deployment as a service
+  kubectl create -f examples/extensions/deployment.yaml "${kube_flags[@]}"
+  # Pre-condition: 3 replicas
+  kube::test::get_object_assert 'deployment nginx-deployment' "{{$deployment_replicas}}" '3'
+  # Command
+  kubectl expose deployment/nginx-deployment
+  # Post-condition: service exists and exposes deployment port (80)
+  kube::test::get_object_assert 'service nginx-deployment' "{{$port_field}}" '80'
+  # Clean-up
+  kubectl delete deployment/nginx-deployment service/nginx-deployment "${kube_flags[@]}"
   # TODO: Remove once deployment reaping is implemented
   kubectl delete rc --all "${kube_flags[@]}"
 
@@ -1061,7 +1102,44 @@ __EOF__
   # Clean up
   kubectl delete hpa nginx-deployment "${kube_flags[@]}"
   kubectl delete deployment nginx-deployment "${kube_flags[@]}"
-  kubectl delete rc -l deployment.kubernetes.io/podTemplateHash "${kube_flags[@]}"
+  kubectl delete rc -l pod-template-hash "${kube_flags[@]}"
+
+  ### Rollback a deployment 
+  # Pre-condition: no deployment exists
+  kube::test::get_object_assert deployment "{{range.items}}{{$id_field}}:{{end}}" ''
+  # Command
+  # Create a deployment (revision 1)
+  kubectl create -f examples/extensions/deployment.yaml "${kube_flags[@]}"
+  kube::test::get_object_assert deployment "{{range.items}}{{$id_field}}:{{end}}" 'nginx-deployment:'
+  kube::test::get_object_assert deployment "{{range.items}}{{$deployment_image_field}}:{{end}}" 'nginx:'
+  # Rollback to revision 1 - should be no-op
+  kubectl rollout undo deployment nginx-deployment --to-revision=1 "${kube_flags[@]}"
+  kube::test::get_object_assert deployment "{{range.items}}{{$deployment_image_field}}:{{end}}" 'nginx:'
+  # Update the deployment (revision 2)
+  kubectl apply -f hack/testdata/deployment-revision2.yaml "${kube_flags[@]}"
+  kube::test::get_object_assert deployment "{{range.items}}{{$deployment_image_field}}:{{end}}" 'nginx:latest:'
+  # Rollback to revision 1
+  kubectl rollout undo deployment nginx-deployment --to-revision=1 "${kube_flags[@]}"
+  sleep 1
+  kube::test::get_object_assert deployment "{{range.items}}{{$deployment_image_field}}:{{end}}" 'nginx:'
+  # Rollback to revision 1000000 - should be no-op
+  kubectl rollout undo deployment nginx-deployment --to-revision=1000000 "${kube_flags[@]}"
+  kube::test::get_object_assert deployment "{{range.items}}{{$deployment_image_field}}:{{end}}" 'nginx:'
+  # Rollback to last revision
+  kubectl rollout undo deployment nginx-deployment "${kube_flags[@]}"
+  sleep 1
+  kube::test::get_object_assert deployment "{{range.items}}{{$deployment_image_field}}:{{end}}" 'nginx:latest:'
+  # Clean up
+  kubectl delete deployment nginx-deployment "${kube_flags[@]}"
+  kubectl delete rc -l pod-template-hash "${kube_flags[@]}"
+
+  ######################
+  # ConfigMap          #
+  ######################
+
+  kubectl create -f docs/user-guide/configmap/config-map.yaml
+  kube::test::get_object_assert configmap "{{range.items}}{{$id_field}}{{end}}" 'test-configmap'
+  kubectl delete configmap test-configmap "${kube_flags[@]}"
 
   ######################
   # Multiple Resources #
@@ -1319,6 +1397,16 @@ __EOF__
     [[ "$(grep "List of pods" "${file}")" ]]
     [[ "$(grep "Watch for changes to the described resources" "${file}")" ]]
   fi
+
+  #####################
+  # Kubectl --sort-by #
+  #####################
+
+  ### sort-by should not panic if no pod exists
+  # Pre-condition: no POD exists
+  kube::test::get_object_assert pods "{{range.items}}{{$id_field}}:{{end}}" ''
+  # Command
+  kubectl get pods --sort-by="{metadata.name}"
 
   kube::test::clear_all
 }

@@ -21,7 +21,7 @@ import (
 
 	kubeletapp "k8s.io/kubernetes/cmd/kubelet/app"
 	"k8s.io/kubernetes/pkg/api"
-	client "k8s.io/kubernetes/pkg/client/unversioned"
+	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	"k8s.io/kubernetes/pkg/kubelet/cadvisor"
 	"k8s.io/kubernetes/pkg/kubelet/cm"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
@@ -38,7 +38,7 @@ type HollowKubelet struct {
 
 func NewHollowKubelet(
 	nodeName string,
-	client *client.Client,
+	client *clientset.Clientset,
 	cadvisorInterface cadvisor.Interface,
 	dockerClient dockertools.DockerInterface,
 	kubeletPort, kubeletReadOnlyPort int,
@@ -70,6 +70,7 @@ func NewHollowKubelet(
 			1*time.Minute,          /* MinimumGCAge */
 			10*time.Second,         /* NodeStatusUpdateFrequency */
 			10*time.Second,         /* SyncFrequency */
+			5*time.Minute,          /* OutOfDiskTransitionFrequency */
 			40,                     /* MaxPods */
 			containerManager,
 			nil,

@@ -38,10 +38,6 @@ _Note_:
 These instructions are somewhat significantly more advanced than the [single node](docker.md) instructions.  If you are
 interested in just starting to explore Kubernetes, we recommend that you start there.
 
-_Note_:
-There is a [bug](https://github.com/docker/docker/issues/14106) in Docker 1.7.0 that prevents this from working correctly.
-Please install Docker 1.6.2 or Docker 1.7.1.
-
 **Table of Contents**
 
 - [Prerequisites](#prerequisites)
@@ -54,12 +50,12 @@ Please install Docker 1.6.2 or Docker 1.7.1.
 
 ## Prerequisites
 
-1. You need a machine with docker of right version installed.
+The only thing you need is a machine with **Docker 1.7.1 or higher**
 
 ## Overview
 
 This guide will set up a 2-node Kubernetes cluster, consisting of a _master_ node which hosts the API server and orchestrates work
-and a _worker_ node which receives work from the master.  You can repeat the process of adding worker nodes an arbitrary number of
+and a _worker_ node which receives work from the master. You can repeat the process of adding worker nodes an arbitrary number of
 times to create larger clusters.
 
 Here's a diagram of what the final result will look like:
@@ -75,10 +71,14 @@ This pattern is necessary because the `flannel` daemon is responsible for settin
 all of the Docker containers created by Kubernetes.  To achieve this, it must run outside of the _main_ Docker daemon.  However,
 it is still useful to use containers for deployment and management, so we create a simpler _bootstrap_ daemon to achieve this.
 
-You can specify k8s version on very node before install:
+You can specify the version on every node before install:
 
-```
-export K8S_VERSION=<your_k8s_version (e.g. 1.0.3)>
+```sh
+export K8S_VERSION=<your_k8s_version (e.g. 1.2.0-alpha.7)>
+export ETCD_VERSION=<your_etcd_version (e.g. 2.2.1)>
+export FLANNEL_VERSION=<your_flannel_version (e.g. 0.5.5)>
+export FLANNEL_IFACE=<flannel_interface (defaults to eth0)>
+export FLANNEL_IPMASQ=<flannel_ipmasq_flag (defaults to true)>
 ```
 
 Otherwise, we'll use latest `hyperkube` image as default k8s version.
@@ -87,7 +87,8 @@ Otherwise, we'll use latest `hyperkube` image as default k8s version.
 
 The first step in the process is to initialize the master node.
 
-Clone the Kubernetes repo, and run [master.sh](docker-multinode/master.sh) on the master machine with root:
+The MASTER_IP step here is optional, it defaults to the first value of `hostname -I`.
+Clone the Kubernetes repo, and run [master.sh](docker-multinode/master.sh) on the master machine _with root_:
 
 ```console
 $ export MASTER_IP=<your_master_ip (e.g. 1.2.3.4)>
@@ -103,7 +104,7 @@ See [here](docker-multinode/master.md) for detailed instructions explanation.
 
 Once your master is up and running you can add one or more workers on different machines.
 
-Clone the Kubernetes repo, and run [worker.sh](docker-multinode/worker.sh) on the worker machine with root:
+Clone the Kubernetes repo, and run [worker.sh](docker-multinode/worker.sh) on the worker machine _with root_:
 
 ```console
 $ export MASTER_IP=<your_master_ip (e.g. 1.2.3.4)>

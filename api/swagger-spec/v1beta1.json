@@ -79,7 +79,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "*/*"
@@ -124,7 +125,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "*/*"
@@ -201,7 +203,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "*/*"
@@ -351,7 +354,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "*/*"
@@ -404,7 +408,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "*/*"
@@ -457,7 +462,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "application/json-patch+json",
@@ -512,7 +518,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "*/*"
@@ -678,7 +685,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "*/*"
@@ -812,7 +820,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "*/*"
@@ -895,7 +904,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "*/*"
@@ -940,7 +950,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "*/*"
@@ -1017,7 +1028,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "*/*"
@@ -1167,7 +1179,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "*/*"
@@ -1220,7 +1233,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "*/*"
@@ -1273,7 +1287,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "application/json-patch+json",
@@ -1328,7 +1343,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "*/*"
@@ -1494,7 +1510,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "*/*"
@@ -1628,7 +1645,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "*/*"
@@ -1711,7 +1729,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "*/*"
@@ -1756,7 +1775,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "*/*"
@@ -1833,7 +1853,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "*/*"
@@ -1983,7 +2004,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "*/*"
@@ -2036,7 +2058,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "*/*"
@@ -2089,7 +2112,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "application/json-patch+json",
@@ -2144,7 +2168,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "*/*"
@@ -2310,7 +2335,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "*/*"
@@ -2444,7 +2470,1375 @@
        }
       ],
       "produces": [
+       "application/json",
+       "application/yaml"
+      ],
+      "consumes": [
+       "*/*"
+      ]
+     }
+    ]
+   },
+   {
+    "path": "/apis/extensions/v1beta1/podsecuritypolicies",
+    "description": "API at /apis/extensions/v1beta1",
+    "operations": [
+     {
+      "type": "v1beta1.PodSecurityPolicyList",
+      "method": "GET",
+      "summary": "list or watch objects of kind PodSecurityPolicy",
+      "nickname": "listNamespacedPodSecurityPolicy",
+      "parameters": [
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "pretty",
+        "description": "If 'true', then the output is pretty printed.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "labelSelector",
+        "description": "A selector to restrict the list of returned objects by their labels. Defaults to everything.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "fieldSelector",
+        "description": "A selector to restrict the list of returned objects by their fields. Defaults to everything.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "boolean",
+        "paramType": "query",
+        "name": "watch",
+        "description": "Watch for changes to the described resources and return them as a stream of add, update, and remove notifications. Specify resourceVersion.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "resourceVersion",
+        "description": "When specified with a watch call, shows changes that occur after that particular version of a resource. Defaults to changes from the beginning of history.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "integer",
+        "paramType": "query",
+        "name": "timeoutSeconds",
+        "description": "Timeout for the list/watch call.",
+        "required": false,
+        "allowMultiple": false
+       }
+      ],
+      "responseMessages": [
+       {
+        "code": 200,
+        "message": "OK",
+        "responseModel": "v1beta1.PodSecurityPolicyList"
+       }
+      ],
+      "produces": [
+       "application/json",
+       "application/yaml"
+      ],
+      "consumes": [
+       "*/*"
+      ]
+     },
+     {
+      "type": "v1beta1.PodSecurityPolicy",
+      "method": "POST",
+      "summary": "create a PodSecurityPolicy",
+      "nickname": "createNamespacedPodSecurityPolicy",
+      "parameters": [
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "pretty",
+        "description": "If 'true', then the output is pretty printed.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "v1beta1.PodSecurityPolicy",
+        "paramType": "body",
+        "name": "body",
+        "description": "",
+        "required": true,
+        "allowMultiple": false
+       }
+      ],
+      "responseMessages": [
+       {
+        "code": 200,
+        "message": "OK",
+        "responseModel": "v1beta1.PodSecurityPolicy"
+       }
+      ],
+      "produces": [
+       "application/json",
+       "application/yaml"
+      ],
+      "consumes": [
+       "*/*"
+      ]
+     },
+     {
+      "type": "unversioned.Status",
+      "method": "DELETE",
+      "summary": "delete collection of PodSecurityPolicy",
+      "nickname": "deletecollectionNamespacedPodSecurityPolicy",
+      "parameters": [
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "pretty",
+        "description": "If 'true', then the output is pretty printed.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "labelSelector",
+        "description": "A selector to restrict the list of returned objects by their labels. Defaults to everything.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "fieldSelector",
+        "description": "A selector to restrict the list of returned objects by their fields. Defaults to everything.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "boolean",
+        "paramType": "query",
+        "name": "watch",
+        "description": "Watch for changes to the described resources and return them as a stream of add, update, and remove notifications. Specify resourceVersion.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "resourceVersion",
+        "description": "When specified with a watch call, shows changes that occur after that particular version of a resource. Defaults to changes from the beginning of history.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "integer",
+        "paramType": "query",
+        "name": "timeoutSeconds",
+        "description": "Timeout for the list/watch call.",
+        "required": false,
+        "allowMultiple": false
+       }
+      ],
+      "responseMessages": [
+       {
+        "code": 200,
+        "message": "OK",
+        "responseModel": "unversioned.Status"
+       }
+      ],
+      "produces": [
+       "application/json",
+       "application/yaml"
+      ],
+      "consumes": [
+       "*/*"
+      ]
+     }
+    ]
+   },
+   {
+    "path": "/apis/extensions/v1beta1/watch/podsecuritypolicies",
+    "description": "API at /apis/extensions/v1beta1",
+    "operations": [
+     {
+      "type": "json.WatchEvent",
+      "method": "GET",
+      "summary": "watch individual changes to a list of PodSecurityPolicy",
+      "nickname": "watchNamespacedPodSecurityPolicyList",
+      "parameters": [
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "pretty",
+        "description": "If 'true', then the output is pretty printed.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "labelSelector",
+        "description": "A selector to restrict the list of returned objects by their labels. Defaults to everything.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "fieldSelector",
+        "description": "A selector to restrict the list of returned objects by their fields. Defaults to everything.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "boolean",
+        "paramType": "query",
+        "name": "watch",
+        "description": "Watch for changes to the described resources and return them as a stream of add, update, and remove notifications. Specify resourceVersion.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "resourceVersion",
+        "description": "When specified with a watch call, shows changes that occur after that particular version of a resource. Defaults to changes from the beginning of history.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "integer",
+        "paramType": "query",
+        "name": "timeoutSeconds",
+        "description": "Timeout for the list/watch call.",
+        "required": false,
+        "allowMultiple": false
+       }
+      ],
+      "responseMessages": [
+       {
+        "code": 200,
+        "message": "OK",
+        "responseModel": "json.WatchEvent"
+       }
+      ],
+      "produces": [
        "application/json"
+      ],
+      "consumes": [
+       "*/*"
+      ]
+     }
+    ]
+   },
+   {
+    "path": "/apis/extensions/v1beta1/podsecuritypolicies/{name}",
+    "description": "API at /apis/extensions/v1beta1",
+    "operations": [
+     {
+      "type": "v1beta1.PodSecurityPolicy",
+      "method": "GET",
+      "summary": "read the specified PodSecurityPolicy",
+      "nickname": "readNamespacedPodSecurityPolicy",
+      "parameters": [
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "pretty",
+        "description": "If 'true', then the output is pretty printed.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "boolean",
+        "paramType": "query",
+        "name": "export",
+        "description": "Should this value be exported.  Export strips fields that a user can not specify.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "boolean",
+        "paramType": "query",
+        "name": "exact",
+        "description": "Should the export be exact.  Exact export maintains cluster-specific fields like 'Namespace'",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "path",
+        "name": "name",
+        "description": "name of the PodSecurityPolicy",
+        "required": true,
+        "allowMultiple": false
+       }
+      ],
+      "responseMessages": [
+       {
+        "code": 200,
+        "message": "OK",
+        "responseModel": "v1beta1.PodSecurityPolicy"
+       }
+      ],
+      "produces": [
+       "application/json",
+       "application/yaml"
+      ],
+      "consumes": [
+       "*/*"
+      ]
+     },
+     {
+      "type": "v1beta1.PodSecurityPolicy",
+      "method": "PUT",
+      "summary": "replace the specified PodSecurityPolicy",
+      "nickname": "replaceNamespacedPodSecurityPolicy",
+      "parameters": [
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "pretty",
+        "description": "If 'true', then the output is pretty printed.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "v1beta1.PodSecurityPolicy",
+        "paramType": "body",
+        "name": "body",
+        "description": "",
+        "required": true,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "path",
+        "name": "name",
+        "description": "name of the PodSecurityPolicy",
+        "required": true,
+        "allowMultiple": false
+       }
+      ],
+      "responseMessages": [
+       {
+        "code": 200,
+        "message": "OK",
+        "responseModel": "v1beta1.PodSecurityPolicy"
+       }
+      ],
+      "produces": [
+       "application/json",
+       "application/yaml"
+      ],
+      "consumes": [
+       "*/*"
+      ]
+     },
+     {
+      "type": "v1beta1.PodSecurityPolicy",
+      "method": "PATCH",
+      "summary": "partially update the specified PodSecurityPolicy",
+      "nickname": "patchNamespacedPodSecurityPolicy",
+      "parameters": [
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "pretty",
+        "description": "If 'true', then the output is pretty printed.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "unversioned.Patch",
+        "paramType": "body",
+        "name": "body",
+        "description": "",
+        "required": true,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "path",
+        "name": "name",
+        "description": "name of the PodSecurityPolicy",
+        "required": true,
+        "allowMultiple": false
+       }
+      ],
+      "responseMessages": [
+       {
+        "code": 200,
+        "message": "OK",
+        "responseModel": "v1beta1.PodSecurityPolicy"
+       }
+      ],
+      "produces": [
+       "application/json",
+       "application/yaml"
+      ],
+      "consumes": [
+       "application/json-patch+json",
+       "application/merge-patch+json",
+       "application/strategic-merge-patch+json"
+      ]
+     },
+     {
+      "type": "unversioned.Status",
+      "method": "DELETE",
+      "summary": "delete a PodSecurityPolicy",
+      "nickname": "deleteNamespacedPodSecurityPolicy",
+      "parameters": [
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "pretty",
+        "description": "If 'true', then the output is pretty printed.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "v1.DeleteOptions",
+        "paramType": "body",
+        "name": "body",
+        "description": "",
+        "required": true,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "path",
+        "name": "name",
+        "description": "name of the PodSecurityPolicy",
+        "required": true,
+        "allowMultiple": false
+       }
+      ],
+      "responseMessages": [
+       {
+        "code": 200,
+        "message": "OK",
+        "responseModel": "unversioned.Status"
+       }
+      ],
+      "produces": [
+       "application/json",
+       "application/yaml"
+      ],
+      "consumes": [
+       "*/*"
+      ]
+     }
+    ]
+   },
+   {
+    "path": "/apis/extensions/v1beta1/watch/podsecuritypolicies/{name}",
+    "description": "API at /apis/extensions/v1beta1",
+    "operations": [
+     {
+      "type": "json.WatchEvent",
+      "method": "GET",
+      "summary": "watch changes to an object of kind PodSecurityPolicy",
+      "nickname": "watchNamespacedPodSecurityPolicy",
+      "parameters": [
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "pretty",
+        "description": "If 'true', then the output is pretty printed.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "labelSelector",
+        "description": "A selector to restrict the list of returned objects by their labels. Defaults to everything.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "fieldSelector",
+        "description": "A selector to restrict the list of returned objects by their fields. Defaults to everything.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "boolean",
+        "paramType": "query",
+        "name": "watch",
+        "description": "Watch for changes to the described resources and return them as a stream of add, update, and remove notifications. Specify resourceVersion.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "resourceVersion",
+        "description": "When specified with a watch call, shows changes that occur after that particular version of a resource. Defaults to changes from the beginning of history.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "integer",
+        "paramType": "query",
+        "name": "timeoutSeconds",
+        "description": "Timeout for the list/watch call.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "path",
+        "name": "name",
+        "description": "name of the PodSecurityPolicy",
+        "required": true,
+        "allowMultiple": false
+       }
+      ],
+      "responseMessages": [
+       {
+        "code": 200,
+        "message": "OK",
+        "responseModel": "json.WatchEvent"
+       }
+      ],
+      "produces": [
+       "application/json"
+      ],
+      "consumes": [
+       "*/*"
+      ]
+     }
+    ]
+   },
+   {
+    "path": "/apis/extensions/v1beta1/namespaces/{namespace}/replicasets",
+    "description": "API at /apis/extensions/v1beta1",
+    "operations": [
+     {
+      "type": "v1beta1.ReplicaSetList",
+      "method": "GET",
+      "summary": "list or watch objects of kind ReplicaSet",
+      "nickname": "listNamespacedReplicaSet",
+      "parameters": [
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "pretty",
+        "description": "If 'true', then the output is pretty printed.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "labelSelector",
+        "description": "A selector to restrict the list of returned objects by their labels. Defaults to everything.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "fieldSelector",
+        "description": "A selector to restrict the list of returned objects by their fields. Defaults to everything.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "boolean",
+        "paramType": "query",
+        "name": "watch",
+        "description": "Watch for changes to the described resources and return them as a stream of add, update, and remove notifications. Specify resourceVersion.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "resourceVersion",
+        "description": "When specified with a watch call, shows changes that occur after that particular version of a resource. Defaults to changes from the beginning of history.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "integer",
+        "paramType": "query",
+        "name": "timeoutSeconds",
+        "description": "Timeout for the list/watch call.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "path",
+        "name": "namespace",
+        "description": "object name and auth scope, such as for teams and projects",
+        "required": true,
+        "allowMultiple": false
+       }
+      ],
+      "responseMessages": [
+       {
+        "code": 200,
+        "message": "OK",
+        "responseModel": "v1beta1.ReplicaSetList"
+       }
+      ],
+      "produces": [
+       "application/json",
+       "application/yaml"
+      ],
+      "consumes": [
+       "*/*"
+      ]
+     },
+     {
+      "type": "v1beta1.ReplicaSet",
+      "method": "POST",
+      "summary": "create a ReplicaSet",
+      "nickname": "createNamespacedReplicaSet",
+      "parameters": [
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "pretty",
+        "description": "If 'true', then the output is pretty printed.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "v1beta1.ReplicaSet",
+        "paramType": "body",
+        "name": "body",
+        "description": "",
+        "required": true,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "path",
+        "name": "namespace",
+        "description": "object name and auth scope, such as for teams and projects",
+        "required": true,
+        "allowMultiple": false
+       }
+      ],
+      "responseMessages": [
+       {
+        "code": 200,
+        "message": "OK",
+        "responseModel": "v1beta1.ReplicaSet"
+       }
+      ],
+      "produces": [
+       "application/json",
+       "application/yaml"
+      ],
+      "consumes": [
+       "*/*"
+      ]
+     },
+     {
+      "type": "unversioned.Status",
+      "method": "DELETE",
+      "summary": "delete collection of ReplicaSet",
+      "nickname": "deletecollectionNamespacedReplicaSet",
+      "parameters": [
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "pretty",
+        "description": "If 'true', then the output is pretty printed.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "labelSelector",
+        "description": "A selector to restrict the list of returned objects by their labels. Defaults to everything.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "fieldSelector",
+        "description": "A selector to restrict the list of returned objects by their fields. Defaults to everything.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "boolean",
+        "paramType": "query",
+        "name": "watch",
+        "description": "Watch for changes to the described resources and return them as a stream of add, update, and remove notifications. Specify resourceVersion.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "resourceVersion",
+        "description": "When specified with a watch call, shows changes that occur after that particular version of a resource. Defaults to changes from the beginning of history.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "integer",
+        "paramType": "query",
+        "name": "timeoutSeconds",
+        "description": "Timeout for the list/watch call.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "path",
+        "name": "namespace",
+        "description": "object name and auth scope, such as for teams and projects",
+        "required": true,
+        "allowMultiple": false
+       }
+      ],
+      "responseMessages": [
+       {
+        "code": 200,
+        "message": "OK",
+        "responseModel": "unversioned.Status"
+       }
+      ],
+      "produces": [
+       "application/json",
+       "application/yaml"
+      ],
+      "consumes": [
+       "*/*"
+      ]
+     }
+    ]
+   },
+   {
+    "path": "/apis/extensions/v1beta1/watch/namespaces/{namespace}/replicasets",
+    "description": "API at /apis/extensions/v1beta1",
+    "operations": [
+     {
+      "type": "json.WatchEvent",
+      "method": "GET",
+      "summary": "watch individual changes to a list of ReplicaSet",
+      "nickname": "watchNamespacedReplicaSetList",
+      "parameters": [
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "pretty",
+        "description": "If 'true', then the output is pretty printed.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "labelSelector",
+        "description": "A selector to restrict the list of returned objects by their labels. Defaults to everything.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "fieldSelector",
+        "description": "A selector to restrict the list of returned objects by their fields. Defaults to everything.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "boolean",
+        "paramType": "query",
+        "name": "watch",
+        "description": "Watch for changes to the described resources and return them as a stream of add, update, and remove notifications. Specify resourceVersion.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "resourceVersion",
+        "description": "When specified with a watch call, shows changes that occur after that particular version of a resource. Defaults to changes from the beginning of history.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "integer",
+        "paramType": "query",
+        "name": "timeoutSeconds",
+        "description": "Timeout for the list/watch call.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "path",
+        "name": "namespace",
+        "description": "object name and auth scope, such as for teams and projects",
+        "required": true,
+        "allowMultiple": false
+       }
+      ],
+      "responseMessages": [
+       {
+        "code": 200,
+        "message": "OK",
+        "responseModel": "json.WatchEvent"
+       }
+      ],
+      "produces": [
+       "application/json"
+      ],
+      "consumes": [
+       "*/*"
+      ]
+     }
+    ]
+   },
+   {
+    "path": "/apis/extensions/v1beta1/namespaces/{namespace}/replicasets/{name}",
+    "description": "API at /apis/extensions/v1beta1",
+    "operations": [
+     {
+      "type": "v1beta1.ReplicaSet",
+      "method": "GET",
+      "summary": "read the specified ReplicaSet",
+      "nickname": "readNamespacedReplicaSet",
+      "parameters": [
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "pretty",
+        "description": "If 'true', then the output is pretty printed.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "boolean",
+        "paramType": "query",
+        "name": "export",
+        "description": "Should this value be exported.  Export strips fields that a user can not specify.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "boolean",
+        "paramType": "query",
+        "name": "exact",
+        "description": "Should the export be exact.  Exact export maintains cluster-specific fields like 'Namespace'",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "path",
+        "name": "namespace",
+        "description": "object name and auth scope, such as for teams and projects",
+        "required": true,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "path",
+        "name": "name",
+        "description": "name of the ReplicaSet",
+        "required": true,
+        "allowMultiple": false
+       }
+      ],
+      "responseMessages": [
+       {
+        "code": 200,
+        "message": "OK",
+        "responseModel": "v1beta1.ReplicaSet"
+       }
+      ],
+      "produces": [
+       "application/json",
+       "application/yaml"
+      ],
+      "consumes": [
+       "*/*"
+      ]
+     },
+     {
+      "type": "v1beta1.ReplicaSet",
+      "method": "PUT",
+      "summary": "replace the specified ReplicaSet",
+      "nickname": "replaceNamespacedReplicaSet",
+      "parameters": [
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "pretty",
+        "description": "If 'true', then the output is pretty printed.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "v1beta1.ReplicaSet",
+        "paramType": "body",
+        "name": "body",
+        "description": "",
+        "required": true,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "path",
+        "name": "namespace",
+        "description": "object name and auth scope, such as for teams and projects",
+        "required": true,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "path",
+        "name": "name",
+        "description": "name of the ReplicaSet",
+        "required": true,
+        "allowMultiple": false
+       }
+      ],
+      "responseMessages": [
+       {
+        "code": 200,
+        "message": "OK",
+        "responseModel": "v1beta1.ReplicaSet"
+       }
+      ],
+      "produces": [
+       "application/json",
+       "application/yaml"
+      ],
+      "consumes": [
+       "*/*"
+      ]
+     },
+     {
+      "type": "v1beta1.ReplicaSet",
+      "method": "PATCH",
+      "summary": "partially update the specified ReplicaSet",
+      "nickname": "patchNamespacedReplicaSet",
+      "parameters": [
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "pretty",
+        "description": "If 'true', then the output is pretty printed.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "unversioned.Patch",
+        "paramType": "body",
+        "name": "body",
+        "description": "",
+        "required": true,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "path",
+        "name": "namespace",
+        "description": "object name and auth scope, such as for teams and projects",
+        "required": true,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "path",
+        "name": "name",
+        "description": "name of the ReplicaSet",
+        "required": true,
+        "allowMultiple": false
+       }
+      ],
+      "responseMessages": [
+       {
+        "code": 200,
+        "message": "OK",
+        "responseModel": "v1beta1.ReplicaSet"
+       }
+      ],
+      "produces": [
+       "application/json",
+       "application/yaml"
+      ],
+      "consumes": [
+       "application/json-patch+json",
+       "application/merge-patch+json",
+       "application/strategic-merge-patch+json"
+      ]
+     },
+     {
+      "type": "unversioned.Status",
+      "method": "DELETE",
+      "summary": "delete a ReplicaSet",
+      "nickname": "deleteNamespacedReplicaSet",
+      "parameters": [
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "pretty",
+        "description": "If 'true', then the output is pretty printed.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "v1.DeleteOptions",
+        "paramType": "body",
+        "name": "body",
+        "description": "",
+        "required": true,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "path",
+        "name": "namespace",
+        "description": "object name and auth scope, such as for teams and projects",
+        "required": true,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "path",
+        "name": "name",
+        "description": "name of the ReplicaSet",
+        "required": true,
+        "allowMultiple": false
+       }
+      ],
+      "responseMessages": [
+       {
+        "code": 200,
+        "message": "OK",
+        "responseModel": "unversioned.Status"
+       }
+      ],
+      "produces": [
+       "application/json",
+       "application/yaml"
+      ],
+      "consumes": [
+       "*/*"
+      ]
+     }
+    ]
+   },
+   {
+    "path": "/apis/extensions/v1beta1/watch/namespaces/{namespace}/replicasets/{name}",
+    "description": "API at /apis/extensions/v1beta1",
+    "operations": [
+     {
+      "type": "json.WatchEvent",
+      "method": "GET",
+      "summary": "watch changes to an object of kind ReplicaSet",
+      "nickname": "watchNamespacedReplicaSet",
+      "parameters": [
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "pretty",
+        "description": "If 'true', then the output is pretty printed.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "labelSelector",
+        "description": "A selector to restrict the list of returned objects by their labels. Defaults to everything.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "fieldSelector",
+        "description": "A selector to restrict the list of returned objects by their fields. Defaults to everything.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "boolean",
+        "paramType": "query",
+        "name": "watch",
+        "description": "Watch for changes to the described resources and return them as a stream of add, update, and remove notifications. Specify resourceVersion.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "resourceVersion",
+        "description": "When specified with a watch call, shows changes that occur after that particular version of a resource. Defaults to changes from the beginning of history.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "integer",
+        "paramType": "query",
+        "name": "timeoutSeconds",
+        "description": "Timeout for the list/watch call.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "path",
+        "name": "namespace",
+        "description": "object name and auth scope, such as for teams and projects",
+        "required": true,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "path",
+        "name": "name",
+        "description": "name of the ReplicaSet",
+        "required": true,
+        "allowMultiple": false
+       }
+      ],
+      "responseMessages": [
+       {
+        "code": 200,
+        "message": "OK",
+        "responseModel": "json.WatchEvent"
+       }
+      ],
+      "produces": [
+       "application/json"
+      ],
+      "consumes": [
+       "*/*"
+      ]
+     }
+    ]
+   },
+   {
+    "path": "/apis/extensions/v1beta1/replicasets",
+    "description": "API at /apis/extensions/v1beta1",
+    "operations": [
+     {
+      "type": "v1beta1.ReplicaSetList",
+      "method": "GET",
+      "summary": "list or watch objects of kind ReplicaSet",
+      "nickname": "listReplicaSet",
+      "parameters": [
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "pretty",
+        "description": "If 'true', then the output is pretty printed.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "labelSelector",
+        "description": "A selector to restrict the list of returned objects by their labels. Defaults to everything.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "fieldSelector",
+        "description": "A selector to restrict the list of returned objects by their fields. Defaults to everything.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "boolean",
+        "paramType": "query",
+        "name": "watch",
+        "description": "Watch for changes to the described resources and return them as a stream of add, update, and remove notifications. Specify resourceVersion.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "resourceVersion",
+        "description": "When specified with a watch call, shows changes that occur after that particular version of a resource. Defaults to changes from the beginning of history.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "integer",
+        "paramType": "query",
+        "name": "timeoutSeconds",
+        "description": "Timeout for the list/watch call.",
+        "required": false,
+        "allowMultiple": false
+       }
+      ],
+      "responseMessages": [
+       {
+        "code": 200,
+        "message": "OK",
+        "responseModel": "v1beta1.ReplicaSetList"
+       }
+      ],
+      "produces": [
+       "application/json",
+       "application/yaml"
+      ],
+      "consumes": [
+       "*/*"
+      ]
+     }
+    ]
+   },
+   {
+    "path": "/apis/extensions/v1beta1/watch/replicasets",
+    "description": "API at /apis/extensions/v1beta1",
+    "operations": [
+     {
+      "type": "json.WatchEvent",
+      "method": "GET",
+      "summary": "watch individual changes to a list of ReplicaSet",
+      "nickname": "watchReplicaSetList",
+      "parameters": [
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "pretty",
+        "description": "If 'true', then the output is pretty printed.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "labelSelector",
+        "description": "A selector to restrict the list of returned objects by their labels. Defaults to everything.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "fieldSelector",
+        "description": "A selector to restrict the list of returned objects by their fields. Defaults to everything.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "boolean",
+        "paramType": "query",
+        "name": "watch",
+        "description": "Watch for changes to the described resources and return them as a stream of add, update, and remove notifications. Specify resourceVersion.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "resourceVersion",
+        "description": "When specified with a watch call, shows changes that occur after that particular version of a resource. Defaults to changes from the beginning of history.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "integer",
+        "paramType": "query",
+        "name": "timeoutSeconds",
+        "description": "Timeout for the list/watch call.",
+        "required": false,
+        "allowMultiple": false
+       }
+      ],
+      "responseMessages": [
+       {
+        "code": 200,
+        "message": "OK",
+        "responseModel": "json.WatchEvent"
+       }
+      ],
+      "produces": [
+       "application/json"
+      ],
+      "consumes": [
+       "*/*"
+      ]
+     }
+    ]
+   },
+   {
+    "path": "/apis/extensions/v1beta1/namespaces/{namespace}/replicasets/{name}/status",
+    "description": "API at /apis/extensions/v1beta1",
+    "operations": [
+     {
+      "type": "v1beta1.ReplicaSet",
+      "method": "PUT",
+      "summary": "replace status of the specified ReplicaSet",
+      "nickname": "replaceNamespacedReplicaSetStatus",
+      "parameters": [
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "pretty",
+        "description": "If 'true', then the output is pretty printed.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "v1beta1.ReplicaSet",
+        "paramType": "body",
+        "name": "body",
+        "description": "",
+        "required": true,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "path",
+        "name": "namespace",
+        "description": "object name and auth scope, such as for teams and projects",
+        "required": true,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "path",
+        "name": "name",
+        "description": "name of the ReplicaSet",
+        "required": true,
+        "allowMultiple": false
+       }
+      ],
+      "responseMessages": [
+       {
+        "code": 200,
+        "message": "OK",
+        "responseModel": "v1beta1.ReplicaSet"
+       }
+      ],
+      "produces": [
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "*/*"
@@ -2495,7 +3889,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "*/*"
@@ -2548,7 +3943,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "*/*"
@@ -2601,7 +3997,8 @@
        }
       ],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
        "application/json-patch+json",
@@ -2622,10 +4019,12 @@
       "nickname": "getAPIResources",
       "parameters": [],
       "produces": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ],
       "consumes": [
-       "application/json"
+       "application/json",
+       "application/yaml"
       ]
      }
     ]
@@ -3042,6 +4441,13 @@
       "$ref": "v1beta1.IngressBackend",
       "description": "A default backend capable of servicing requests that don't match any rule. At least one of 'backend' or 'rules' must be specified. This field is optional to allow the loadbalancer controller or defaulting logic to specify a global default."
      },
+     "tls": {
+      "type": "array",
+      "items": {
+       "$ref": "v1beta1.IngressTLS"
+      },
+      "description": "TLS configuration. Currently the Ingress only supports a single TLS port, 443, and assumes TLS termination. If multiple members of this list specify different hosts, they will be multiplexed on the same port according to the hostname specified through the SNI TLS extension."
+     },
      "rules": {
       "type": "array",
       "items": {
@@ -3066,6 +4472,23 @@
      "servicePort": {
       "type": "string",
       "description": "Specifies the port of the referenced service."
+     }
+    }
+   },
+   "v1beta1.IngressTLS": {
+    "id": "v1beta1.IngressTLS",
+    "description": "IngressTLS describes the transport layer security associated with an Ingress.",
+    "properties": {
+     "hosts": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Hosts are a list of hosts included in the TLS certificate. The values in this list must match the name/s used in the tlsSecret. Defaults to the wildcard host setting for the loadbalancer controller fulfilling this Ingress, if left unspecified."
+     },
+     "secretName": {
+      "type": "string",
+      "description": "SecretName is the name of the secret used to terminate SSL traffic on 443. Field is left optional to allow SSL routing based on SNI hostname alone. If the SNI host in a listener conflicts with the \"Host\" header field used by an IngressRule, the SNI host is used for termination and value of the Host header is used for routing."
      }
     }
    },
@@ -3221,7 +4644,7 @@
      "completions": {
       "type": "integer",
       "format": "int32",
-      "description": "Completions specifies the desired number of successfully finished pods the job should be run with. Defaults to 1. More info: http://releases.k8s.io/HEAD/docs/user-guide/jobs.md"
+      "description": "Completions specifies the desired number of successfully finished pods the job should be run with.  Setting to nil means that the success of any pod signals the success of all pods, and allows parallelism to have any positive value.  Setting to 1 means that parallelism is limited to 1 and the success of that pod signals the success of the job."
      },
      "activeDeadlineSeconds": {
       "type": "integer",
@@ -3556,13 +4979,10 @@
    "v1.SecretVolumeSource": {
     "id": "v1.SecretVolumeSource",
     "description": "Adapts a Secret into a volume.\n\nThe contents of the target Secret's Data field will be presented in a volume as files using the keys in the Data field as the file names. Secret volumes support ownership management and SELinux relabeling.",
-    "required": [
-     "secretName"
-    ],
     "properties": {
      "secretName": {
       "type": "string",
-      "description": "SecretName is the name of a secret in the pod's namespace. More info: http://releases.k8s.io/HEAD/docs/user-guide/volumes.md#secrets"
+      "description": "Name of the secret in the pod's namespace to use. More info: http://releases.k8s.io/HEAD/docs/user-guide/volumes.md#secrets"
      }
     }
    },
@@ -3786,6 +5206,10 @@
        "type": "string"
       },
       "description": "Required: Monitors is a collection of Ceph monitors More info: http://releases.k8s.io/HEAD/examples/cephfs/README.md#how-to-use-it"
+     },
+     "path": {
+      "type": "string",
+      "description": "Optional: Used as the mounted root, rather than the full Ceph tree, default is /"
      },
      "user": {
       "type": "string",
@@ -4048,13 +5472,52 @@
    "v1.EnvVarSource": {
     "id": "v1.EnvVarSource",
     "description": "EnvVarSource represents a source for the value of an EnvVar.",
-    "required": [
-     "fieldRef"
-    ],
     "properties": {
      "fieldRef": {
       "$ref": "v1.ObjectFieldSelector",
-      "description": "Selects a field of the pod. Only name and namespace are supported."
+      "description": "Selects a field of the pod; only name and namespace are supported."
+     },
+     "configMapKeyRef": {
+      "$ref": "v1.ConfigMapKeySelector",
+      "description": "Selects a key of a ConfigMap."
+     },
+     "secretKeyRef": {
+      "$ref": "v1.SecretKeySelector",
+      "description": "Selects a key of a secret in the pod's namespace"
+     }
+    }
+   },
+   "v1.ConfigMapKeySelector": {
+    "id": "v1.ConfigMapKeySelector",
+    "description": "Selects a key from a ConfigMap.",
+    "required": [
+     "key"
+    ],
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "Name of the referent. More info: http://releases.k8s.io/HEAD/docs/user-guide/identifiers.md#names"
+     },
+     "key": {
+      "type": "string",
+      "description": "The key to select."
+     }
+    }
+   },
+   "v1.SecretKeySelector": {
+    "id": "v1.SecretKeySelector",
+    "description": "SecretKeySelector selects a key of a Secret.",
+    "required": [
+     "key"
+    ],
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "Name of the referent. More info: http://releases.k8s.io/HEAD/docs/user-guide/identifiers.md#names"
+     },
+     "key": {
+      "type": "string",
+      "description": "The key of the secret to select from.  Must be a valid secret key."
      }
     }
    },
@@ -4167,11 +5630,36 @@
      },
      "host": {
       "type": "string",
-      "description": "Host name to connect to, defaults to the pod IP."
+      "description": "Host name to connect to, defaults to the pod IP. You probably want to set \"Host\" in httpHeaders instead."
      },
      "scheme": {
       "type": "string",
       "description": "Scheme to use for connecting to the host. Defaults to HTTP."
+     },
+     "httpHeaders": {
+      "type": "array",
+      "items": {
+       "$ref": "v1.HTTPHeader"
+      },
+      "description": "Custom headers to set in the request. HTTP allows repeated headers."
+     }
+    }
+   },
+   "v1.HTTPHeader": {
+    "id": "v1.HTTPHeader",
+    "description": "HTTPHeader describes a custom header to be used in HTTP probes",
+    "required": [
+     "name",
+     "value"
+    ],
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "The header field name"
+     },
+     "value": {
+      "type": "string",
+      "description": "The header field value"
      }
     }
    },
@@ -4374,7 +5862,7 @@
     "properties": {
      "type": {
       "type": "string",
-      "description": "Type of job condition, currently only Complete."
+      "description": "Type of job condition, Complete or Failed."
      },
      "status": {
       "type": "string",
@@ -4395,6 +5883,280 @@
      "message": {
       "type": "string",
       "description": "Human readable message indicating details about last transition."
+     }
+    }
+   },
+   "v1beta1.PodSecurityPolicyList": {
+    "id": "v1beta1.PodSecurityPolicyList",
+    "description": "Pod Security Policy List is a list of PodSecurityPolicy objects.",
+    "required": [
+     "items"
+    ],
+    "properties": {
+     "kind": {
+      "type": "string",
+      "description": "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#types-kinds"
+     },
+     "apiVersion": {
+      "type": "string",
+      "description": "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#resources"
+     },
+     "metadata": {
+      "$ref": "unversioned.ListMeta",
+      "description": "Standard list metadata. More info: http://docs.k8s.io/api-conventions.md#metadata"
+     },
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "v1beta1.PodSecurityPolicy"
+      },
+      "description": "Items is a list of schema objects."
+     }
+    }
+   },
+   "v1beta1.PodSecurityPolicy": {
+    "id": "v1beta1.PodSecurityPolicy",
+    "description": "Pod Security Policy governs the ability to make requests that affect the Security Context that will be applied to a pod and container.",
+    "properties": {
+     "kind": {
+      "type": "string",
+      "description": "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#types-kinds"
+     },
+     "apiVersion": {
+      "type": "string",
+      "description": "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#resources"
+     },
+     "metadata": {
+      "$ref": "v1.ObjectMeta",
+      "description": "Standard object's metadata. More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#metadata"
+     },
+     "spec": {
+      "$ref": "v1beta1.PodSecurityPolicySpec",
+      "description": "Spec defines the policy enforced."
+     }
+    }
+   },
+   "v1beta1.PodSecurityPolicySpec": {
+    "id": "v1beta1.PodSecurityPolicySpec",
+    "description": "Pod Security Policy Spec defines the policy enforced.",
+    "properties": {
+     "privileged": {
+      "type": "boolean",
+      "description": "privileged determines if a pod can request to be run as privileged."
+     },
+     "capabilities": {
+      "type": "array",
+      "items": {
+       "$ref": "v1.Capability"
+      },
+      "description": "capabilities is a list of capabilities that can be added."
+     },
+     "volumes": {
+      "type": "array",
+      "items": {
+       "$ref": "v1beta1.FSType"
+      },
+      "description": "volumes is a white list of allowed volume plugins.  Empty indicates that all plugins may be used."
+     },
+     "hostNetwork": {
+      "type": "boolean",
+      "description": "hostNetwork determines if the policy allows the use of HostNetwork in the pod spec."
+     },
+     "hostPorts": {
+      "type": "array",
+      "items": {
+       "$ref": "v1beta1.HostPortRange"
+      },
+      "description": "hostPorts determines which host port ranges are allowed to be exposed."
+     },
+     "hostPID": {
+      "type": "boolean",
+      "description": "hostPID determines if the policy allows the use of HostPID in the pod spec."
+     },
+     "hostIPC": {
+      "type": "boolean",
+      "description": "hostIPC determines if the policy allows the use of HostIPC in the pod spec."
+     },
+     "seLinuxContext": {
+      "$ref": "v1beta1.SELinuxContextStrategyOptions",
+      "description": "seLinuxContext is the strategy that will dictate the allowable labels that may be set."
+     },
+     "runAsUser": {
+      "$ref": "v1beta1.RunAsUserStrategyOptions",
+      "description": "runAsUser is the strategy that will dictate the allowable RunAsUser values that may be set."
+     }
+    }
+   },
+   "v1beta1.FSType": {
+    "id": "v1beta1.FSType",
+    "properties": {}
+   },
+   "v1beta1.HostPortRange": {
+    "id": "v1beta1.HostPortRange",
+    "description": "Host Port Range defines a range of host ports that will be enabled by a policy for pods to use.  It requires both the start and end to be defined.",
+    "required": [
+     "min",
+     "max"
+    ],
+    "properties": {
+     "min": {
+      "type": "integer",
+      "format": "int32",
+      "description": "min is the start of the range, inclusive."
+     },
+     "max": {
+      "type": "integer",
+      "format": "int32",
+      "description": "max is the end of the range, inclusive."
+     }
+    }
+   },
+   "v1beta1.SELinuxContextStrategyOptions": {
+    "id": "v1beta1.SELinuxContextStrategyOptions",
+    "description": "SELinux Context Strategy Options defines the strategy type and any options used to create the strategy.",
+    "required": [
+     "type"
+    ],
+    "properties": {
+     "type": {
+      "type": "string",
+      "description": "type is the strategy that will dictate the allowable labels that may be set."
+     },
+     "seLinuxOptions": {
+      "$ref": "v1.SELinuxOptions",
+      "description": "seLinuxOptions required to run as; required for MustRunAs More info: http://releases.k8s.io/HEAD/docs/design/security_context.md#security-context"
+     }
+    }
+   },
+   "v1beta1.RunAsUserStrategyOptions": {
+    "id": "v1beta1.RunAsUserStrategyOptions",
+    "description": "Run A sUser Strategy Options defines the strategy type and any options used to create the strategy.",
+    "required": [
+     "type"
+    ],
+    "properties": {
+     "type": {
+      "type": "string",
+      "description": "type is the strategy that will dictate the allowable RunAsUser values that may be set."
+     },
+     "ranges": {
+      "type": "array",
+      "items": {
+       "$ref": "v1beta1.IDRange"
+      },
+      "description": "Ranges are the allowed ranges of uids that may be used."
+     }
+    }
+   },
+   "v1beta1.IDRange": {
+    "id": "v1beta1.IDRange",
+    "description": "ID Range provides a min/max of an allowed range of IDs.",
+    "required": [
+     "min",
+     "max"
+    ],
+    "properties": {
+     "min": {
+      "type": "integer",
+      "format": "int64",
+      "description": "Min is the start of the range, inclusive."
+     },
+     "max": {
+      "type": "integer",
+      "format": "int64",
+      "description": "Max is the end of the range, inclusive."
+     }
+    }
+   },
+   "v1beta1.ReplicaSetList": {
+    "id": "v1beta1.ReplicaSetList",
+    "description": "ReplicaSetList is a collection of ReplicaSets.",
+    "required": [
+     "items"
+    ],
+    "properties": {
+     "kind": {
+      "type": "string",
+      "description": "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#types-kinds"
+     },
+     "apiVersion": {
+      "type": "string",
+      "description": "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#resources"
+     },
+     "metadata": {
+      "$ref": "unversioned.ListMeta",
+      "description": "Standard list metadata. More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#types-kinds"
+     },
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "v1beta1.ReplicaSet"
+      },
+      "description": "List of ReplicaSets. More info: http://releases.k8s.io/HEAD/docs/user-guide/replication-controller.md"
+     }
+    }
+   },
+   "v1beta1.ReplicaSet": {
+    "id": "v1beta1.ReplicaSet",
+    "description": "ReplicaSet represents the configuration of a ReplicaSet.",
+    "properties": {
+     "kind": {
+      "type": "string",
+      "description": "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#types-kinds"
+     },
+     "apiVersion": {
+      "type": "string",
+      "description": "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#resources"
+     },
+     "metadata": {
+      "$ref": "v1.ObjectMeta",
+      "description": "If the Labels of a ReplicaSet are empty, they are defaulted to be the same as the Pod(s) that the ReplicaSet manages. Standard object's metadata. More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#metadata"
+     },
+     "spec": {
+      "$ref": "v1beta1.ReplicaSetSpec",
+      "description": "Spec defines the specification of the desired behavior of the ReplicaSet. More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#spec-and-status"
+     },
+     "status": {
+      "$ref": "v1beta1.ReplicaSetStatus",
+      "description": "Status is the most recently observed status of the ReplicaSet. This data may be out of date by some window of time. Populated by the system. Read-only. More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#spec-and-status"
+     }
+    }
+   },
+   "v1beta1.ReplicaSetSpec": {
+    "id": "v1beta1.ReplicaSetSpec",
+    "description": "ReplicaSetSpec is the specification of a ReplicaSet.",
+    "properties": {
+     "replicas": {
+      "type": "integer",
+      "format": "int32",
+      "description": "Replicas is the number of desired replicas. This is a pointer to distinguish between explicit zero and unspecified. Defaults to 1. More info: http://releases.k8s.io/HEAD/docs/user-guide/replication-controller.md#what-is-a-replication-controller"
+     },
+     "selector": {
+      "$ref": "v1beta1.LabelSelector",
+      "description": "Selector is a label query over pods that should match the replica count. If the selector is empty, it is defaulted to the labels present on the pod template. Label keys and values that must match in order to be controlled by this replica set. More info: http://releases.k8s.io/HEAD/docs/user-guide/labels.md#label-selectors"
+     },
+     "template": {
+      "$ref": "v1.PodTemplateSpec",
+      "description": "Template is the object that describes the pod that will be created if insufficient replicas are detected. More info: http://releases.k8s.io/HEAD/docs/user-guide/replication-controller.md#pod-template"
+     }
+    }
+   },
+   "v1beta1.ReplicaSetStatus": {
+    "id": "v1beta1.ReplicaSetStatus",
+    "description": "ReplicaSetStatus represents the current status of a ReplicaSet.",
+    "required": [
+     "replicas"
+    ],
+    "properties": {
+     "replicas": {
+      "type": "integer",
+      "format": "int32",
+      "description": "Replicas is the most recently oberved number of replicas. More info: http://releases.k8s.io/HEAD/docs/user-guide/replication-controller.md#what-is-a-replication-controller"
+     },
+     "observedGeneration": {
+      "type": "integer",
+      "format": "int64",
+      "description": "ObservedGeneration reflects the generation of the most recently observed ReplicaSet."
      }
     }
    },

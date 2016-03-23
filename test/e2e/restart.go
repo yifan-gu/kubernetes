@@ -48,7 +48,7 @@ const (
 	restartPodReadyAgainTimeout = 5 * time.Minute
 )
 
-var _ = Describe("Restart", func() {
+var _ = Describe("Restart [Disruptive]", func() {
 	var c *client.Client
 	var ps *podStore
 	var skipped bool
