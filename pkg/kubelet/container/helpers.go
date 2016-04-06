@@ -179,3 +179,21 @@ func (irecorder *innerEventRecorder) PastEventf(object runtime.Object, timestamp
 		irecorder.recorder.PastEventf(ref, timestamp, eventtype, reason, messageFmt, args...)
 	}
 }
+
+// UsesHostNetwork returns whether the pod should be in host network namespace.
+// Pod must not be nil.
+func UsesHostNetwork(pod *api.Pod) bool {
+	return pod.Spec.SecurityContext != nil && pod.Spec.SecurityContext.HostNetwork
+}
+
+// UsesHostPid returns whether the pod should be in host pid namespace.
+// Pod must not be nil.
+func UsesHostPid(pod *api.Pod) bool {
+	return pod.Spec.SecurityContext != nil && pod.Spec.SecurityContext.HostPID
+}
+
+// UsesHostIPC returns whether the pod should be in host IPC namespace.
+// Pod must not be nil.
+func UsesHostIPC(pod *api.Pod) bool {
+	return pod.Spec.SecurityContext != nil && pod.Spec.SecurityContext.HostIPC
+}

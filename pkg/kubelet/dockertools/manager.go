@@ -798,7 +798,7 @@ func (dm *DockerManager) podInfraContainerChanged(pod *api.Pod, podInfraContaine
 	var ports []api.ContainerPort
 
 	// Check network mode.
-	if usesHostNetwork(pod) {
+	if kubecontainer.UsesHostNetwork(pod) {
 		dockerPodInfraContainer, err := dm.client.InspectContainer(podInfraContainerStatus.ID.ID)
 		if err != nil {
 			return false, err
@@ -1467,7 +1467,7 @@ func (dm *DockerManager) runContainerInPod(pod *api.Pod, container *api.Containe
 	}
 
 	utsMode := ""
-	if usesHostNetwork(pod) {
+	if kubecontainer.UsesHostNetwork(pod) {
 		utsMode = namespaceModeHost
 	}
 	id, err := dm.runContainer(pod, container, opts, ref, netMode, ipcMode, utsMode, pidMode, restartCount)
@@ -1567,7 +1567,7 @@ func (dm *DockerManager) createPodInfraContainer(pod *api.Pod) (kubecontainer.Do
 	netNamespace := ""
 	var ports []api.ContainerPort
 
-	if usesHostNetwork(pod) {
+	if kubecontainer.UsesHostNetwork(pod) {
 		netNamespace = namespaceModeHost
 	} else if dm.networkPlugin.Name() == "cni" || dm.networkPlugin.Name() == "kubenet" {
 		netNamespace = "none"
@@ -1594,7 +1594,16 @@ func (dm *DockerManager) createPodInfraContainer(pod *api.Pod) (kubecontainer.Do
 	}
 
 	// Currently we don't care about restart count of infra container, just set it to 0.
-	id, err := dm.runContainerInPod(pod, container, netNamespace, getIPCMode(pod), getPidMode(pod), "", 0)
+
+	ipcMode := ""
+	if kubecontainer.UsesHostIPC(pod) {
+		ipcMode = namespaceModeHost
+	}
+	pidMode := ""
+	if kubecontainer.UsesHostPid(pod) {
+		pidMode = namespaceModeHost
+	}
+	id, err := dm.runContainerInPod(pod, container, netNamespace, ipcMode, pidMode, "", 0)
 	if err != nil {
 		return "", kubecontainer.ErrRunContainer, err.Error()
 	}
@@ -1820,7 +1829,7 @@ func (dm *DockerManager) SyncPod(pod *api.Pod, _ api.PodStatus, podStatus *kubec
 
 		setupNetworkResult := kubecontainer.NewSyncResult(kubecontainer.SetupNetwork, kubecontainer.GetPodFullName(pod))
 		result.AddSyncResult(setupNetworkResult)
-		if !usesHostNetwork(pod) {
+		if !kubecontainer.UsesHostNetwork(pod) {
 			// Call the networking plugin
 			err = dm.networkPlugin.SetUpPod(pod.Namespace, pod.Name, podInfraContainerID)
 			if err != nil {
@@ -1905,7 +1914,11 @@ func (dm *DockerManager) SyncPod(pod *api.Pod, _ api.PodStatus, podStatus *kubec
 		// and IPC namespace.  PID mode cannot point to another container right now.
 		// See createPodInfraContainer for infra container setup.
 		namespaceMode := fmt.Sprintf("container:%v", podInfraContainerID)
-		_, err = dm.runContainerInPod(pod, container, namespaceMode, namespaceMode, getPidMode(pod), podIP, restartCount)
+		pidMode := ""
+		if kubecontainer.UsesHostPid(pod) {
+			pidMode = namespaceModeHost
+		}
+		_, err = dm.runContainerInPod(pod, container, namespaceMode, namespaceMode, pidMode, podIP, restartCount)
 		if err != nil {
 			startContainerResult.Fail(kubecontainer.ErrRunContainer, err.Error())
 			// TODO(bburns) : Perhaps blacklist a container after N failures?
@@ -2009,24 +2022,6 @@ func (dm *DockerManager) doBackOff(pod *api.Pod, container *api.Container, podSt
 		backOff.Next(stableName, ts)
 	}
 	return false, nil, ""
-}
-
-// getPidMode returns the pid mode to use on the docker container based on pod.Spec.HostPID.
-func getPidMode(pod *api.Pod) string {
-	pidMode := ""
-	if pod.Spec.SecurityContext != nil && pod.Spec.SecurityContext.HostPID {
-		pidMode = namespaceModeHost
-	}
-	return pidMode
-}
-
-// getIPCMode returns the ipc mode to use on the docker container based on pod.Spec.HostIPC.
-func getIPCMode(pod *api.Pod) string {
-	ipcMode := ""
-	if pod.Spec.SecurityContext != nil && pod.Spec.SecurityContext.HostIPC {
-		ipcMode = namespaceModeHost
-	}
-	return ipcMode
 }
 
 // GetNetNS returns the network namespace path for the given container

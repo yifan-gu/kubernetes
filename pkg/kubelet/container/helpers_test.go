@@ -211,3 +211,37 @@ func TestShouldContainerBeRestarted(t *testing.T) {
 		}
 	}
 }
+
+func TestUsesHostPid(t *testing.T) {
+	// test false
+	pod := &api.Pod{}
+	ret := UsesHostPid(pod)
+	if ret {
+		t.Errorf("expected false for pod but got %v", ret)
+	}
+
+	// test true
+	pod.Spec.SecurityContext = &api.PodSecurityContext{}
+	pod.Spec.SecurityContext.HostPid = true
+	ret = UseHostPid(pod)
+	if !ret {
+		t.Errorf("expected true for pod but got %v", ret)
+	}
+}
+
+func TestUsesHostIPC(t *testing.T) {
+	// test false
+	pod := &api.Pod{}
+	ret := UsesHostIPC(pod)
+	if ret {
+		t.Errorf("expected false for pod but got %v", ret)
+	}
+
+	// test true
+	pod.Spec.SecurityContext = &api.PodSecurityContext{}
+	pod.Spec.SecurityContext.HostIPC = true
+	ret = UseHostIPC(pod)
+	if !ret {
+		t.Errorf("expected true for pod but got %v", ret)
+	}
+}
