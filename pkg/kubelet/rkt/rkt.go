@@ -804,11 +804,28 @@ func (r *Runtime) preparePod(pod *api.Pod, pullSecrets []api.Secret) (string, *k
 		return "", nil, err
 	}
 
+	// TODO(yifan): Only supports sole container namespace or sole host namespace, not mixed ones.
+	usesHostPid, usesHostIPC := kubecontainer.UsesHostPid(pod), kubecontainer.UsesHostIPC(pod)
+	var runAsFly bool
+	switch {
+	case !usesHostPid && !usesHostIPC:
+		runAsFly = false
+	case usesHostPid && usesHostIPC:
+		runAsFly = true
+	default:
+		return "", nil, fmt.Errorf("does not support different PID and IPC namespace", err)
+	}
+
 	// Run 'rkt prepare' to get the rkt UUID.
 	cmds := []string{"prepare", "--quiet", "--pod-manifest", manifestFile.Name()}
-	if r.config.Stage1Image != "" {
-		cmds = append(cmds, "--stage1-image", r.config.Stage1Image)
+
+	// If '--stage1-image' is given or we need to run in host namespace, then append the 'stage1-path' flag.
+	if !runAsFly && r.config.Stage1Image != "" {
+		cmds = append(cmds, "--stage1-path", r.config.Stage1Image)
+	} else if runAsFly {
+		cmds = append(cmds, "--stage1-path", r.getDefaultStage1FlyPath())
 	}
+
 	output, err := r.runCommand(cmds...)
 	if err != nil {
 		return "", nil, err
@@ -824,9 +841,6 @@ func (r *Runtime) preparePod(pod *api.Pod, pullSecrets []api.Secret) (string, *k
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to generate 'rkt run-prepared' command: %v", err)
 	}
-
-	// TODO handle pod.Spec.HostPID
-	// TODO handle pod.Spec.HostIPC
 
 	units := []*unit.UnitOption{
 		newUnitOption("Service", "ExecStart", runPrepared),

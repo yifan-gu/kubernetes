@@ -18,9 +18,16 @@ package rkt
 
 import (
 	"fmt"
+	"path/filepath"
 
 	rktapi "github.com/coreos/rkt/api/v1alpha"
 	"golang.org/x/net/context"
+)
+
+const (
+	// Default name of the stage1-fly image.
+	// It is expected to be located under the same directory as the rkt binary.
+	defaultStage1FlyName = "stage1-fly.aci"
 )
 
 // Config stores the global configuration for the rkt runtime.
@@ -103,4 +110,9 @@ func (r *Runtime) getConfig(cfg *Config) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// getDefaultStage1FlyPath returns the stage1-fly image's absolute path.
+func (r *Runtime) getDefaultStage1FlyPath() string {
+	return filepath.Join(filepath.Dir(r.config.Path), defaultStage1FlyName)
 }
