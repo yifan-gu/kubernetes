@@ -75,7 +75,9 @@ func (plugin *kubenetNetworkPlugin) Init(host network.Host) error {
 		glog.Warningf("Failed to find default bridge MTU: %v", err)
 	}
 
-	return nil
+	// This will set bridge-nf-call-iptables=1 to ensure that kube proxy
+	// functions correctly.
+	return plugin.NoopNetworkPlugin.Init(host)
 }
 
 func findMinMTU() (*net.Interface, error) {
