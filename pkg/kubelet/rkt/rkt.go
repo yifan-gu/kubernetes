@@ -1778,3 +1778,7 @@ func (r *Runtime) GetPodStatus(uid types.UID, name, namespace string) (*kubecont
 func (r *Runtime) GetConfig() *Config {
 	return r.config
 }
+
+func usesHostNetwork(pod *api.Pod) bool {
+	return pod.Spec.SecurityContext != nil && pod.Spec.SecurityContext.HostNetwork
+}
