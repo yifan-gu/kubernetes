@@ -34,6 +34,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"k8s.io/kubernetes/cmd/kubelet/app/options"
+	"k8s.io/kubernetes/cmd/kubelet/app/options/pauseimage"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/resource"
 	"k8s.io/kubernetes/pkg/apis/componentconfig"
@@ -556,7 +557,7 @@ func SimpleKubelet(client *clientset.Clientset,
 		NodeStatusUpdateFrequency: nodeStatusUpdateFrequency,
 		OOMAdjuster:               oom.NewFakeOOMAdjuster(),
 		OSInterface:               osInterface,
-		PodInfraContainerImage:    options.GetDefaultPodInfraContainerImage(),
+		PodInfraContainerImage:    pauseimage.GetDefaultPodInfraContainerImage(),
 		Port:                port,
 		ReadOnlyPort:        readOnlyPort,
 		RegisterNode:        true,

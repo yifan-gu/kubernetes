@@ -19,9 +19,9 @@ package options
 
 import (
 	_ "net/http/pprof"
-	"runtime"
 	"time"
 
+	"k8s.io/kubernetes/cmd/kubelet/app/options/pauseimage"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/apis/componentconfig"
@@ -38,19 +38,7 @@ import (
 const (
 	defaultRootDir             = "/var/lib/kubelet"
 	experimentalFlannelOverlay = false
-
-	defaultPodInfraContainerImageName    = "gcr.io/google_containers/pause"
-	defaultPodInfraContainerImageVersion = "2.0"
 )
-
-// Returns the arch-specific pause image that kubelet should use as the default
-func GetDefaultPodInfraContainerImage() string {
-	if runtime.GOARCH == "amd64" {
-		return defaultPodInfraContainerImageName + ":" + defaultPodInfraContainerImageVersion
-	} else {
-		return defaultPodInfraContainerImageName + "-" + runtime.GOARCH + ":" + defaultPodInfraContainerImageVersion
-	}
-}
 
 // KubeletServer encapsulates all of the parameters necessary for starting up
 // a kubelet. These can either be set via command line or directly.
@@ -119,7 +107,7 @@ func NewKubeletServer() *KubeletServer {
 			NodeLabels:                  make(map[string]string),
 			OOMScoreAdj:                 int32(qos.KubeletOOMScoreAdj),
 			LockFilePath:                "",
-			PodInfraContainerImage:      GetDefaultPodInfraContainerImage(),
+			PodInfraContainerImage:      pauseimage.GetDefaultPodInfraContainerImage(),
 			Port:                           ports.KubeletPort,
 			ReadOnlyPort:                   ports.KubeletReadOnlyPort,
 			RegisterNode:                   true, // will be ignored if no apiserver is configured

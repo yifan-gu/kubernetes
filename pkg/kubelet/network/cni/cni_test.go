@@ -28,11 +28,11 @@ import (
 	"testing"
 	"text/template"
 
+	"k8s.io/kubernetes/cmd/kubelet/app/options/pauseimage"
 	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 
 	cadvisorapi "github.com/google/cadvisor/info/v1"
 
-	"k8s.io/kubernetes/cmd/kubelet/app/options"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/client/record"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
@@ -151,7 +151,7 @@ func newTestDockerManager() (*dockertools.DockerManager, *dockertools.FakeDocker
 		proberesults.NewManager(),
 		containerRefManager,
 		&cadvisorapi.MachineInfo{},
-		options.GetDefaultPodInfraContainerImage(),
+		pauseimage.GetDefaultPodInfraContainerImage(),
 		0, 0, "",
 		containertest.FakeOS{},
 		networkPlugin,
