@@ -42,7 +42,7 @@ coreos:
         EnvironmentFile=/etc/kube-env
         ExecStartPre=/usr/bin/mkdir -p /etc/rkt
         ExecStartPre=/usr/bin/mkdir -p /opt/downloads
-        ExecStartPre=/usr/bin/curl --location --create-dirs --output /opt/downloads/rkt.tar.gz https://storage.googleapis.com/rkt-bin/rkt-bin.tar.gz
+        ExecStartPre=/usr/bin/curl --location --create-dirs --output /opt/downloads/rkt.tar.gz https://storage.googleapis.com/rkt-bin/${RKT_VERSION}.tar.gz
         ExecStartPre=/usr/bin/tar xf /opt/downloads/rkt.tar.gz -C /opt --overwrite
         ExecStartPre=/usr/bin/rm -fr /opt/rkt
         ExecStart=/usr/bin/mv /opt/bin /opt/rkt
@@ -116,6 +116,8 @@ coreos:
         After=kube-env.service
         Requires=kubernetes-download-manifests.service
         After=kubernetes-download-manifests.service
+        Requires=rkt-api-service.service
+        After=rkt-api-service.service
         [Service]
         EnvironmentFile=/etc/kube-env
         ExecStartPre=/usr/bin/curl --fail --silent --show-error \
@@ -134,31 +136,15 @@ coreos:
         --cluster-dns=${DNS_SERVER_IP} \
         --cluster-domain=${DNS_DOMAIN} \
         --logtostderr=true \
-        --container-runtime=docker \
+        --container-runtime=rkt \
         --rkt-path=/opt/rkt/rkt \
-        --configure-cbr0=true \
-        --pod-cidr=${MASTER_IP_RANGE} \
         --register-schedulable=false \
-        --reconcile-cidr=false \
-        --hairpin-mode=none
+        --configure-cbr0=false \
+        --network-plugin=kubenet
         Restart=always
         RestartSec=10
         KillMode=process
         
-    - name: docker.service
-      drop-ins:
-        - name: 50-docker-opts.conf
-          content: |
-            [Service]
-            Environment='DOCKER_OPTS=--bridge=cbr0 --iptables=false --ip-masq=false'
-            MountFlags=slave
-            LimitNOFILE=1048576
-            LimitNPROC=1048576
-            LimitCORE=infinity
-            Restart=always
-            RestartSec=2s
-            StartLimitInterval=0
-
     - name: kubernetes-configure-node.service
       command: start
       content: |
@@ -196,7 +182,23 @@ coreos:
         [Service]
         Environment=KUBECTL_BIN=/opt/kubernetes/server/bin/kubectl
         Environment=kubelet_kubeconfig_file=/var/lib/kubelet/kubeconfig
+        Environment=MASTER_CONTAINER_RUNTIME=rkt
         ExecStartPre=/usr/bin/chmod 0755 /opt/kubernetes/saltbase/salt/kube-addons/kube-addons.sh
         ExecStart=/opt/kubernetes/saltbase/salt/kube-addons/kube-addons.sh
         Restart=always
         RestartSec=10
+
+    - name: rkt-api-service.service
+      command: start
+      content: |
+        [Unit]
+        Description=Start rkt API service as Daemon
+        Requires=kubernetes-install-rkt.service
+        After=kubernetes-install-rkt.service
+        [Service]
+        ExecStart=/opt/rkt/rkt api-service
+        Restart=always
+        RestartSec=10
+
+    - name: docker.service
+      command: stop
