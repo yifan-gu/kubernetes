@@ -40,9 +40,9 @@ import (
 	"k8s.io/kubernetes/pkg/capabilities"
 	"k8s.io/kubernetes/pkg/client/chaosclient"
 	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
+	unversionedcore "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/core/unversioned"
 	"k8s.io/kubernetes/pkg/client/record"
 	"k8s.io/kubernetes/pkg/client/restclient"
-	unversionedcore "k8s.io/kubernetes/pkg/client/typed/generated/core/unversioned"
 	clientauth "k8s.io/kubernetes/pkg/client/unversioned/auth"
 	"k8s.io/kubernetes/pkg/client/unversioned/clientcmd"
 	clientcmdapi "k8s.io/kubernetes/pkg/client/unversioned/clientcmd/api"
@@ -59,6 +59,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/server"
 	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
 	"k8s.io/kubernetes/pkg/util"
+	utilconfig "k8s.io/kubernetes/pkg/util/config"
 	"k8s.io/kubernetes/pkg/util/configz"
 	"k8s.io/kubernetes/pkg/util/crypto"
 	"k8s.io/kubernetes/pkg/util/flock"
@@ -68,6 +69,7 @@ import (
 	"k8s.io/kubernetes/pkg/util/oom"
 	"k8s.io/kubernetes/pkg/util/runtime"
 	"k8s.io/kubernetes/pkg/util/wait"
+	"k8s.io/kubernetes/pkg/version"
 	"k8s.io/kubernetes/pkg/volume"
 )
 
@@ -242,6 +244,7 @@ func UnsecuredKubeletConfig(s *options.KubeletServer) (*KubeletConfig, error) {
 		Reservation:                    *reservation,
 		KubeletCgroups:                 s.KubeletCgroups,
 		RktPath:                        s.RktPath,
+		RktAPIEndpoint:                 s.RktAPIEndpoint,
 		RktStage1Image:                 s.RktStage1Image,
 		RootDirectory:                  s.RootDirectory,
 		Runonce:                        s.RunOnce,
@@ -552,7 +555,7 @@ func SimpleKubelet(client *clientset.Clientset,
 		NodeStatusUpdateFrequency: nodeStatusUpdateFrequency,
 		OOMAdjuster:               oom.NewFakeOOMAdjuster(),
 		OSInterface:               osInterface,
-		PodInfraContainerImage:    kubetypes.PodInfraContainerImage,
+		PodInfraContainerImage:    options.GetDefaultPodInfraContainerImage(),
 		Port:                port,
 		ReadOnlyPort:        readOnlyPort,
 		RegisterNode:        true,
@@ -607,7 +610,7 @@ func RunKubelet(kcfg *KubeletConfig) error {
 	eventBroadcaster.StartLogging(glog.V(3).Infof)
 	if kcfg.EventClient != nil {
 		glog.V(4).Infof("Sending events to api server.")
-		eventBroadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{kcfg.EventClient.Events("")})
+		eventBroadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{Interface: kcfg.EventClient.Events("")})
 	} else {
 		glog.Warning("No api server defined - no events will be sent to API server.")
 	}
@@ -640,10 +643,10 @@ func RunKubelet(kcfg *KubeletConfig) error {
 		if _, err := k.RunOnce(podCfg.Updates()); err != nil {
 			return fmt.Errorf("runonce failed: %v", err)
 		}
-		glog.Info("Started kubelet as runonce")
+		glog.Infof("Started kubelet %s as runonce", version.Get().String())
 	} else {
 		startKubelet(k, podCfg, kcfg)
-		glog.Info("Started kubelet")
+		glog.Infof("Started kubelet %s", version.Get().String())
 	}
 	return nil
 }
@@ -756,6 +759,7 @@ type KubeletConfig struct {
 	ResolverConfig                 string
 	KubeletCgroups                 string
 	RktPath                        string
+	RktAPIEndpoint                 string
 	RktStage1Image                 string
 	RootDirectory                  string
 	Runonce                        bool
@@ -838,6 +842,7 @@ func CreateAndInitKubelet(kc *KubeletConfig) (k KubeletBootstrap, pc *config.Pod
 		kc.CgroupRoot,
 		kc.ContainerRuntime,
 		kc.RktPath,
+		kc.RktAPIEndpoint,
 		kc.RktStage1Image,
 		kc.Mounter,
 		kc.Writer,
@@ -876,7 +881,7 @@ func CreateAndInitKubelet(kc *KubeletConfig) (k KubeletBootstrap, pc *config.Pod
 	return k, pc, nil
 }
 
-func parseReservation(kubeReserved, systemReserved util.ConfigurationMap) (*kubetypes.Reservation, error) {
+func parseReservation(kubeReserved, systemReserved utilconfig.ConfigurationMap) (*kubetypes.Reservation, error) {
 	reservation := new(kubetypes.Reservation)
 	if rl, err := parseResourceList(kubeReserved); err != nil {
 		return nil, err
@@ -891,7 +896,7 @@ func parseReservation(kubeReserved, systemReserved util.ConfigurationMap) (*kube
 	return reservation, nil
 }
 
-func parseResourceList(m util.ConfigurationMap) (api.ResourceList, error) {
+func parseResourceList(m utilconfig.ConfigurationMap) (api.ResourceList, error) {
 	rl := make(api.ResourceList)
 	for k, v := range m {
 		switch api.ResourceName(k) {
@@ -900,6 +905,9 @@ func parseResourceList(m util.ConfigurationMap) (api.ResourceList, error) {
 			q, err := resource.ParseQuantity(v)
 			if err != nil {
 				return nil, err
+			}
+			if q.Amount.Sign() == -1 {
+				return nil, fmt.Errorf("resource quantity for %q cannot be negative: %v", k, v)
 			}
 			rl[api.ResourceName(k)] = *q
 		default:

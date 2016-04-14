@@ -33,7 +33,7 @@ import (
 
 func newStorage(t *testing.T) (*REST, *StatusREST, *etcdtesting.EtcdTestServer) {
 	etcdStorage, server := registrytest.NewEtcdStorage(t, "")
-	restOptions := generic.RESTOptions{etcdStorage, generic.UndecoratedStorage, 1}
+	restOptions := generic.RESTOptions{Storage: etcdStorage, Decorator: generic.UndecoratedStorage, DeleteCollectionWorkers: 1}
 	persistentVolumeStorage, statusStorage := NewREST(restOptions)
 	return persistentVolumeStorage, statusStorage, server
 }
@@ -153,7 +153,7 @@ func TestUpdateStatus(t *testing.T) {
 	key, _ := storage.KeyFunc(ctx, "foo")
 	key = etcdtest.AddPrefix(key)
 	pvStart := validNewPersistentVolume("foo")
-	err := storage.Storage.Set(ctx, key, pvStart, nil, 0)
+	err := storage.Storage.Create(ctx, key, pvStart, nil, 0)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}

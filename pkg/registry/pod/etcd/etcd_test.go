@@ -20,7 +20,6 @@ import (
 	"strings"
 	"testing"
 
-	etcd "github.com/coreos/etcd/client"
 	"golang.org/x/net/context"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/errors"
@@ -40,7 +39,7 @@ import (
 
 func newStorage(t *testing.T) (*REST, *BindingREST, *StatusREST, *etcdtesting.EtcdTestServer) {
 	etcdStorage, server := registrytest.NewEtcdStorage(t, "")
-	restOptions := generic.RESTOptions{etcdStorage, generic.UndecoratedStorage, 3}
+	restOptions := generic.RESTOptions{Storage: etcdStorage, Decorator: generic.UndecoratedStorage, DeleteCollectionWorkers: 3}
 	storage := NewStorage(restOptions, nil, nil)
 	return storage.Pod, storage.Binding, storage.Status, server
 }
@@ -138,15 +137,15 @@ type FailDeletionStorage struct {
 	Called *bool
 }
 
-func (f FailDeletionStorage) Delete(ctx context.Context, key string, out runtime.Object) error {
+func (f FailDeletionStorage) Delete(ctx context.Context, key string, out runtime.Object, precondition *storage.Preconditions) error {
 	*f.Called = true
-	return etcd.Error{Code: etcd.ErrorCodeKeyNotFound}
+	return storage.NewKeyNotFoundError(key, 0)
 }
 
 func newFailDeleteStorage(t *testing.T, called *bool) (*REST, *etcdtesting.EtcdTestServer) {
 	etcdStorage, server := registrytest.NewEtcdStorage(t, "")
 	failDeleteStorage := FailDeletionStorage{etcdStorage, called}
-	restOptions := generic.RESTOptions{failDeleteStorage, generic.UndecoratedStorage, 3}
+	restOptions := generic.RESTOptions{Storage: failDeleteStorage, Decorator: generic.UndecoratedStorage, DeleteCollectionWorkers: 3}
 	storage := NewStorage(restOptions, nil, nil)
 	return storage.Pod, server
 }

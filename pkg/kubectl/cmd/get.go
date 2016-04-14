@@ -33,16 +33,13 @@ import (
 // referencing the cmd.Flags()
 type GetOptions struct {
 	Filenames []string
+	Recursive bool
 }
 
 const (
 	get_long = `Display one or many resources.
 
-Possible resource types include (case insensitive): pods (po), services (svc),
-replicationcontrollers (rc), nodes (no), events (ev), componentstatuses (cs),
-limitranges (limits), persistentvolumes (pv), persistentvolumeclaims (pvc),
-resourcequotas (quota), namespaces (ns), endpoints (ep),
-horizontalpodautoscalers (hpa), serviceaccounts or secrets.
+` + kubectl.PossibleResourceTypes + `
 
 By specifying the output as 'template' and providing a Go template as the value
 of the --template flag, you can filter the attributes of the fetched resource(s).`
@@ -77,11 +74,12 @@ func NewCmdGet(f *cmdutil.Factory, out io.Writer) *cobra.Command {
 	options := &GetOptions{}
 
 	// retrieve a list of handled resources from printer as valid args
-	validArgs := []string{}
+	validArgs, argAliases := []string{}, []string{}
 	p, err := f.Printer(nil, false, false, false, false, false, false, []string{})
 	cmdutil.CheckErr(err)
 	if p != nil {
 		validArgs = p.HandledResources()
+		argAliases = kubectl.ResourceAliases(validArgs)
 	}
 
 	cmd := &cobra.Command{
@@ -93,7 +91,8 @@ func NewCmdGet(f *cmdutil.Factory, out io.Writer) *cobra.Command {
 			err := RunGet(f, out, cmd, args, options)
 			cmdutil.CheckErr(err)
 		},
-		ValidArgs: validArgs,
+		ValidArgs:  validArgs,
+		ArgAliases: argAliases,
 	}
 	cmdutil.AddPrinterFlags(cmd)
 	cmd.Flags().StringP("selector", "l", "", "Selector (label query) to filter on")
@@ -104,6 +103,8 @@ func NewCmdGet(f *cmdutil.Factory, out io.Writer) *cobra.Command {
 	cmd.Flags().Bool("export", false, "If true, use 'export' for the resources.  Exported resources are stripped of cluster-specific information.")
 	usage := "Filename, directory, or URL to a file identifying the resource to get from a server."
 	kubectl.AddJsonFilenameFlag(cmd, &options.Filenames, usage)
+	cmdutil.AddRecursiveFlag(cmd, &options.Recursive)
+	cmdutil.AddInclude3rdPartyFlags(cmd)
 	return cmd
 }
 
@@ -112,7 +113,7 @@ func NewCmdGet(f *cmdutil.Factory, out io.Writer) *cobra.Command {
 func RunGet(f *cmdutil.Factory, out io.Writer, cmd *cobra.Command, args []string, options *GetOptions) error {
 	selector := cmdutil.GetFlagString(cmd, "selector")
 	allNamespaces := cmdutil.GetFlagBool(cmd, "all-namespaces")
-	mapper, typer := f.Object()
+	mapper, typer := f.Object(cmdutil.GetIncludeThirdPartyAPIs(cmd))
 
 	cmdNamespace, enforceNamespace, err := f.DefaultNamespace()
 	if err != nil {
@@ -143,7 +144,7 @@ func RunGet(f *cmdutil.Factory, out io.Writer, cmd *cobra.Command, args []string
 	if isWatch || isWatchOnly {
 		r := resource.NewBuilder(mapper, typer, resource.ClientMapperFunc(f.ClientForMapping), f.Decoder(true)).
 			NamespaceParam(cmdNamespace).DefaultNamespace().AllNamespaces(allNamespaces).
-			FilenameParam(enforceNamespace, options.Filenames...).
+			FilenameParam(enforceNamespace, options.Recursive, options.Filenames...).
 			SelectorParam(selector).
 			ExportParam(export).
 			ResourceTypeOrNameArgs(true, args...).
@@ -198,7 +199,7 @@ func RunGet(f *cmdutil.Factory, out io.Writer, cmd *cobra.Command, args []string
 
 	b := resource.NewBuilder(mapper, typer, resource.ClientMapperFunc(f.ClientForMapping), f.Decoder(true)).
 		NamespaceParam(cmdNamespace).DefaultNamespace().AllNamespaces(allNamespaces).
-		FilenameParam(enforceNamespace, options.Filenames...).
+		FilenameParam(enforceNamespace, options.Recursive, options.Filenames...).
 		SelectorParam(selector).
 		ExportParam(export).
 		ResourceTypeOrNameArgs(true, args...).

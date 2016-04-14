@@ -55,7 +55,14 @@ func newStorageDestinations(groupName string, groupMeta *apimachinery.GroupMeta)
 	return &storageDestinations, nil
 }
 
-func Run() error {
+func NewServerRunOptions() *genericapiserver.ServerRunOptions {
+	serverOptions := genericapiserver.NewServerRunOptions()
+	serverOptions.InsecurePort = InsecurePort
+	serverOptions.SecurePort = SecurePort
+	return serverOptions
+}
+
+func Run(serverOptions *genericapiserver.ServerRunOptions) error {
 	config := genericapiserver.Config{
 		EnableIndex:          true,
 		EnableSwaggerSupport: true,
@@ -86,15 +93,13 @@ func Run() error {
 		VersionedResourcesStorageMap: map[string]map[string]rest.Storage{
 			groupVersion.Version: restStorageMap,
 		},
-		Scheme:               api.Scheme,
-		NegotiatedSerializer: api.Codecs,
+		Scheme:                     api.Scheme,
+		NegotiatedSerializer:       api.Codecs,
+		NegotiatedStreamSerializer: api.StreamCodecs,
 	}
 	if err := s.InstallAPIGroups([]genericapiserver.APIGroupInfo{apiGroupInfo}); err != nil {
 		return fmt.Errorf("Error in installing API: %v", err)
 	}
-	serverOptions := genericapiserver.NewServerRunOptions()
-	serverOptions.InsecurePort = InsecurePort
-	serverOptions.SecurePort = SecurePort
 	s.Run(serverOptions)
 	return nil
 }

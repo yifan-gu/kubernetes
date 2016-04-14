@@ -22,83 +22,23 @@ KUBECTL=${KUBECTL_BIN:-/usr/local/bin/kubectl}
 ADDON_CHECK_INTERVAL_SEC=${TEST_ADDON_CHECK_INTERVAL_SEC:-600}
 
 SYSTEM_NAMESPACE=kube-system
-token_dir=${TOKEN_DIR:-/srv/kubernetes}
 trusty_master=${TRUSTY_MASTER:-false}
 
 function ensure_python() {
-  if ! python --version > /dev/null 2>&1; then    
+  if ! python --version > /dev/null 2>&1; then 
     echo "No python on the machine, will use a python image"
-    local -r PYTHON_IMAGE=python:2.7-slim-pyyaml
-    export PYTHON="docker run --interactive --rm --net=none ${PYTHON_IMAGE} python"
+    if [[ "${MASTER_CONTAINER_RUNTIME}" == "rkt" ]]; then
+      local -r PYTHON_IMAGE=$(/opt/rkt/rkt image list | grep python:2.7-slim-pyyaml | cut -f 1)
+      export PYTHON="/opt/rkt/rkt run --interactive --net=none --stage1-path=/opt/rkt/stage1-fly.aci --insecure-options=image ${PYTHON_IMAGE} --exec=/usr/local/bin/python -- "
+    else
+      local -r PYTHON_IMAGE=python:2.7-slim-pyyaml
+      export PYTHON="docker run --interactive --rm --net=none ${PYTHON_IMAGE} python"
+    fi
   else
     export PYTHON=python
   fi
-}
 
-function create-kubeconfig-secret() {
-  local -r token=$1
-  local -r username=$2
-  local -r server=$3
-  local -r safe_username=$(tr -s ':_' '--' <<< "${username}")
-
-  # Make a kubeconfig file with the token.
-  if [[ ! -z "${CA_CERT:-}" ]]; then
-    # If the CA cert is available, put it into the secret rather than using
-    # insecure-skip-tls-verify.
-    read -r -d '' kubeconfig <<EOF
-apiVersion: v1
-kind: Config
-users:
-- name: ${username}
-  user:
-    token: ${token}
-clusters:
-- name: local
-  cluster:
-     server: ${server}
-     certificate-authority-data: ${CA_CERT}
-contexts:
-- context:
-    cluster: local
-    user: ${username}
-    namespace: ${SYSTEM_NAMESPACE} 
-  name: service-account-context
-current-context: service-account-context
-EOF
-  else
-    read -r -d '' kubeconfig <<EOF
-apiVersion: v1
-kind: Config
-users:
-- name: ${username}
-  user:
-    token: ${token}
-clusters:
-- name: local
-  cluster:
-     server: ${server}
-     insecure-skip-tls-verify: true
-contexts:
-- context:
-    cluster: local
-    user: ${username}
-    namespace: ${SYSTEM_NAMESPACE}
-  name: service-account-context
-current-context: service-account-context
-EOF
-  fi
-
-  local -r kubeconfig_base64=$(echo "${kubeconfig}" | base64 -w0)
-  read -r -d '' secretyaml <<EOF
-apiVersion: v1
-data:
-  kubeconfig: ${kubeconfig_base64}
-kind: Secret
-metadata:
-  name: token-${safe_username}
-type: Opaque
-EOF
-  create-resource-from-string "${secretyaml}" 100 10 "Secret-for-token-for-user-${username}" "${SYSTEM_NAMESPACE}" &
+  echo "PYTHON=$PYTHON"
 }
 
 # $1 filename of addon to start.
@@ -126,7 +66,7 @@ function create-resource-from-string() {
   local -r config_name=$4;
   local -r namespace=$5;
   while [ ${tries} -gt 0 ]; do
-    echo "${config_string}" | ${KUBECTL} --namespace="${namespace}" create -f - && \
+    echo "${config_string}" | ${KUBECTL} --namespace="${namespace}" apply -f - && \
         echo "== Successfully started ${config_name} in namespace ${namespace} at $(date -Is)" && \
         return 0;
     let tries=tries-1;
@@ -158,6 +98,17 @@ function load-docker-images() {
   done
 }
 
+function load-rkt-images() {
+	for image in "$1/"*; do
+		(cd /tmp ; /opt/rkt/docker2aci "${image}")
+	done
+	for aci in "/tmp/"*.aci; do
+		/opt/rkt/rkt fetch "${aci}" --insecure-options=image
+	done
+
+	/opt/rkt/rkt fetch coreos.com/rkt/stage1-fly:1.3.0
+}
+
 # The business logic for whether a given object should be created
 # was already enforced by salt, and /etc/kubernetes/addons is the
 # managed result is of that. Start everything below that directory.
@@ -165,8 +116,15 @@ echo "== Kubernetes addon manager started at $(date -Is) with ADDON_CHECK_INTERV
 
 # Load any images that we may need. This is not needed for trusty master and
 # the way it restarts docker daemon does not work for trusty.
-if [[ "${trusty_master}" == "false" ]]; then
-  load-docker-images /srv/salt/kube-addons-images
+if [[ "${MASTER_CONTAINER_RUNTIME}" == "rkt" ]]; then
+  echo "rkt"
+  load-rkt-images /srv/salt/kube-addons-images
+else
+  echo "not rkt"
+  if [[ "${trusty_master}" == "false" ]]; then
+    echo "docker"
+    load-docker-images /srv/salt/kube-addons-images
+  fi
 fi
 
 ensure_python
@@ -195,29 +153,6 @@ while [ -z "${token_found}" ]; do
 done
 
 echo "== default service account in the ${SYSTEM_NAMESPACE} namespace has token ${token_found} =="
-
-# Generate secrets for "internal service accounts".
-# TODO(etune): move to a completely yaml/object based
-# workflow so that service accounts can be created
-# at the same time as the services that use them.
-# NOTE: needs to run as root to read this file.
-# Read each line in the csv file of tokens.
-# Expect errors when the script is started again.
-# NOTE: secrets are created asynchronously, in background.
-while read line; do
-  # Split each line into the token and username.
-  IFS=',' read -a parts <<< "${line}"
-  token=${parts[0]}
-  username=${parts[1]}
-  # DNS is special, since it's necessary for cluster bootstrapping.
-  if [[ "${username}" == "system:dns" ]] && [[ ! -z "${KUBERNETES_MASTER_NAME:-}" ]]; then
-    create-kubeconfig-secret "${token}" "${username}" "https://${KUBERNETES_MASTER_NAME}"
-  else
-    # Set the server to https://kubernetes. Pods/components that
-    # do not have DNS available will have to override the server.
-    create-kubeconfig-secret "${token}" "${username}" "https://kubernetes.default"
-  fi
-done < "${token_dir}/known_tokens.csv"
 
 # Create admission_control objects if defined before any other addon services. If the limits
 # are defined in a namespace other than default, we should still create the limits for the

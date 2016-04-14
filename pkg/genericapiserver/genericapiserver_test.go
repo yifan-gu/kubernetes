@@ -80,6 +80,7 @@ func TestNew(t *testing.T) {
 	assert.Equal(s.enableLogsSupport, config.EnableLogsSupport)
 	assert.Equal(s.enableUISupport, config.EnableUISupport)
 	assert.Equal(s.enableSwaggerSupport, config.EnableSwaggerSupport)
+	assert.Equal(s.enableSwaggerUI, config.EnableSwaggerUI)
 	assert.Equal(s.enableProfiling, config.EnableProfiling)
 	assert.Equal(s.APIPrefix, config.APIPrefix)
 	assert.Equal(s.APIGroupPrefix, config.APIGroupPrefix)
@@ -87,7 +88,6 @@ func TestNew(t *testing.T) {
 	assert.Equal(s.authenticator, config.Authenticator)
 	assert.Equal(s.authorizer, config.Authorizer)
 	assert.Equal(s.AdmissionControl, config.AdmissionControl)
-	assert.Equal(s.ApiGroupVersionOverrides, config.APIGroupVersionOverrides)
 	assert.Equal(s.RequestContextMapper, config.RequestContextMapper)
 	assert.Equal(s.cacheTimeout, config.CacheTimeout)
 	assert.Equal(s.ExternalAddress, config.ExternalHost)
@@ -130,6 +130,7 @@ func TestInstallAPIGroups(t *testing.T) {
 			IsLegacyGroup:                true,
 			ParameterCodec:               api.ParameterCodec,
 			NegotiatedSerializer:         api.Codecs,
+			NegotiatedStreamSerializer:   api.StreamCodecs,
 		},
 		{
 			// extensions group version
@@ -138,6 +139,7 @@ func TestInstallAPIGroups(t *testing.T) {
 			OptionsExternalVersion:       &apiGroupMeta.GroupVersion,
 			ParameterCodec:               api.ParameterCodec,
 			NegotiatedSerializer:         api.Codecs,
+			NegotiatedStreamSerializer:   api.StreamCodecs,
 		},
 	}
 	s.InstallAPIGroups(apiGroupsInfo)

@@ -37,7 +37,7 @@ const defaultReplicas = 100
 
 func newStorage(t *testing.T) (*ReplicaSetStorage, *etcdtesting.EtcdTestServer) {
 	etcdStorage, server := registrytest.NewEtcdStorage(t, "extensions")
-	restOptions := generic.RESTOptions{etcdStorage, generic.UndecoratedStorage, 1}
+	restOptions := generic.RESTOptions{Storage: etcdStorage, Decorator: generic.UndecoratedStorage, DeleteCollectionWorkers: 1}
 	replicaSetStorage := NewStorage(restOptions)
 	return &replicaSetStorage, server
 }
@@ -121,11 +121,6 @@ func TestUpdate(t *testing.T) {
 			return object
 		},
 		// invalid updateFunc
-		func(obj runtime.Object) runtime.Object {
-			object := obj.(*extensions.ReplicaSet)
-			object.UID = "newUID"
-			return object
-		},
 		func(obj runtime.Object) runtime.Object {
 			object := obj.(*extensions.ReplicaSet)
 			object.Name = ""
@@ -251,7 +246,7 @@ func TestScaleGet(t *testing.T) {
 	var rs extensions.ReplicaSet
 	ctx := api.WithNamespace(api.NewContext(), api.NamespaceDefault)
 	key := etcdtest.AddPrefix("/replicasets/" + api.NamespaceDefault + "/" + name)
-	if err := storage.ReplicaSet.Storage.Set(ctx, key, &validReplicaSet, &rs, 0); err != nil {
+	if err := storage.ReplicaSet.Storage.Create(ctx, key, &validReplicaSet, &rs, 0); err != nil {
 		t.Fatalf("error setting new replica set (key: %s) %v: %v", key, validReplicaSet, err)
 	}
 
@@ -290,7 +285,7 @@ func TestScaleUpdate(t *testing.T) {
 	var rs extensions.ReplicaSet
 	ctx := api.WithNamespace(api.NewContext(), api.NamespaceDefault)
 	key := etcdtest.AddPrefix("/replicasets/" + api.NamespaceDefault + "/" + name)
-	if err := storage.ReplicaSet.Storage.Set(ctx, key, &validReplicaSet, &rs, 0); err != nil {
+	if err := storage.ReplicaSet.Storage.Create(ctx, key, &validReplicaSet, &rs, 0); err != nil {
 		t.Fatalf("error setting new replica set (key: %s) %v: %v", key, validReplicaSet, err)
 	}
 	replicas := 12
@@ -331,7 +326,7 @@ func TestStatusUpdate(t *testing.T) {
 
 	ctx := api.WithNamespace(api.NewContext(), api.NamespaceDefault)
 	key := etcdtest.AddPrefix("/replicasets/" + api.NamespaceDefault + "/foo")
-	if err := storage.ReplicaSet.Storage.Set(ctx, key, &validReplicaSet, nil, 0); err != nil {
+	if err := storage.ReplicaSet.Storage.Create(ctx, key, &validReplicaSet, nil, 0); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	update := extensions.ReplicaSet{

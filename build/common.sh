@@ -48,7 +48,7 @@ readonly KUBE_GCS_DELETE_EXISTING="${KUBE_GCS_DELETE_EXISTING:-n}"
 
 # Constants
 readonly KUBE_BUILD_IMAGE_REPO=kube-build
-readonly KUBE_BUILD_IMAGE_CROSS_TAG="v1.4.2-1"
+readonly KUBE_BUILD_IMAGE_CROSS_TAG="v1.6.0-1"
 # KUBE_BUILD_DATA_CONTAINER_NAME=kube-build-data-<hash>"
 
 # Here we map the output directories across both the local and remote _output
@@ -60,7 +60,8 @@ readonly KUBE_BUILD_IMAGE_CROSS_TAG="v1.4.2-1"
 # *_OUTPUT_BINPATH - location where final binaries are placed.  If the remote
 #                    is really remote, this is the stuff that has to be copied
 #                    back.
-readonly LOCAL_OUTPUT_ROOT="${KUBE_ROOT}/_output"
+# OUT_DIR can come in from the Makefile, so honor it.
+readonly LOCAL_OUTPUT_ROOT="${KUBE_ROOT}/${OUT_DIR:-_output}"
 readonly LOCAL_OUTPUT_SUBPATH="${LOCAL_OUTPUT_ROOT}/dockerized"
 readonly LOCAL_OUTPUT_BINPATH="${LOCAL_OUTPUT_SUBPATH}/bin"
 readonly LOCAL_OUTPUT_IMAGE_STAGING="${LOCAL_OUTPUT_ROOT}/images"
@@ -102,28 +103,28 @@ kube::build::get_docker_wrapped_binaries() {
           kube-apiserver,busybox
           kube-controller-manager,busybox
           kube-scheduler,busybox
-          kube-proxy,gcr.io/google_containers/debian-iptables:v1
+          kube-proxy,gcr.io/google_containers/debian-iptables-amd64:v2
         );;
-    "arm") # TODO: Use image with iptables installed for kube-proxy for arm, arm64 and ppc64le
+    "arm")
         local targets=(
-          kube-apiserver,hypriot/armhf-busybox
-          kube-controller-manager,hypriot/armhf-busybox
-          kube-scheduler,hypriot/armhf-busybox
-          kube-proxy,hypriot/armhf-busybox
+          kube-apiserver,armel/busybox
+          kube-controller-manager,armel/busybox
+          kube-scheduler,armel/busybox
+          kube-proxy,gcr.io/google_containers/debian-iptables-arm:v2
         );;
     "arm64")
         local targets=(
           kube-apiserver,aarch64/busybox
           kube-controller-manager,aarch64/busybox
           kube-scheduler,aarch64/busybox
-          kube-proxy,aarch64/busybox
+          kube-proxy,gcr.io/google_containers/debian-iptables-arm64:v2
         );;
     "ppc64le")
         local targets=(
           kube-apiserver,ppc64le/busybox
           kube-controller-manager,ppc64le/busybox
           kube-scheduler,ppc64le/busybox
-          kube-proxy,ppc64le/busybox
+          kube-proxy,gcr.io/google_containers/debian-iptables-ppc64le:v2
         );;
   esac
 
@@ -422,17 +423,17 @@ function kube::release::parse_and_validate_release_version() {
 #   version
 # Returns:
 #   If version is a valid ci version
-# Sets:                    (e.g. for '1.2.3-alpha.4.56+abcd789-dirty')
+# Sets:                    (e.g. for '1.2.3-alpha.4.56+abcdef12345678')
 #   VERSION_MAJOR          (e.g. '1')
 #   VERSION_MINOR          (e.g. '2')
 #   VERSION_PATCH          (e.g. '3')
 #   VERSION_PRERELEASE     (e.g. 'alpha')
 #   VERSION_PRERELEASE_REV (e.g. '4')
-#   VERSION_BUILD_INFO     (e.g. '.56+abcd789-dirty')
+#   VERSION_BUILD_INFO     (e.g. '.56+abcdef12345678')
 #   VERSION_COMMITS        (e.g. '56')
 function kube::release::parse_and_validate_ci_version() {
-  # Accept things like "v1.2.3-alpha.4.56+abcd789-dirty" or "v1.2.3-beta.4.56"
-  local -r version_regex="^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)-(beta|alpha)\\.(0|[1-9][0-9]*)(\\.(0|[1-9][0-9]*)\\+[-0-9a-z]*)?$"
+  # Accept things like "v1.2.3-alpha.4.56+abcdef12345678" or "v1.2.3-beta.4"
+  local -r version_regex="^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)-(beta|alpha)\\.(0|[1-9][0-9]*)(\\.(0|[1-9][0-9]*)\\+[0-9a-f]{7,40})?$"
   local -r version="${1-}"
   [[ "${version}" =~ ${version_regex} ]] || {
     kube::log::error "Invalid ci version: '${version}', must match regex ${version_regex}"
@@ -671,7 +672,12 @@ function kube::release::clean_cruft() {
 function kube::release::package_hyperkube() {
   # If we have these variables set then we want to build all docker images.
   if [[ -n "${KUBE_DOCKER_IMAGE_TAG-}" && -n "${KUBE_DOCKER_REGISTRY-}" ]]; then
-    REGISTRY="${KUBE_DOCKER_REGISTRY}" VERSION="${KUBE_DOCKER_IMAGE_TAG}" make -C cluster/images/hyperkube/ build
+    for platform in "${KUBE_SERVER_PLATFORMS[@]}"; do
+
+      local arch=${platform##*/}
+      kube::log::status "Building hyperkube image for arch: ${arch}"
+      REGISTRY="${KUBE_DOCKER_REGISTRY}" VERSION="${KUBE_DOCKER_IMAGE_TAG}" ARCH="${arch}" make -C cluster/images/hyperkube/ build
+    done
   fi
 }
 
@@ -737,7 +743,7 @@ function kube::release::package_client_tarballs() {
 # Package up all of the server binaries
 function kube::release::package_server_tarballs() {
   local platform
-  for platform in "${KUBE_SERVER_PLATFORMS[@]}" ; do
+  for platform in "${KUBE_SERVER_PLATFORMS[@]}"; do
     local platform_tag=${platform/\//-} # Replace a "/" for a "-"
     local arch=$(basename ${platform})
     kube::log::status "Building tarball: server $platform_tag"
@@ -946,6 +952,7 @@ function kube::release::package_kube_manifests_tarball() {
   cp "${salt_dir}/kube-addons/namespace.yaml" "${release_stage}/trusty"
   cp "${salt_dir}/kube-addons/kube-addons.sh" "${release_stage}/trusty"
   cp "${salt_dir}/kube-addons/kube-addon-update.sh" "${release_stage}/trusty"
+  cp "${KUBE_ROOT}/cluster/gce/trusty/configure-helper.sh" "${release_stage}/trusty"
   cp -r "${salt_dir}/kube-admission-controls/limit-range" "${release_stage}/trusty"
   local objects
   objects=$(cd "${KUBE_ROOT}/cluster/addons" && find . \( -name \*.yaml -or -name \*.yaml.in -or -name \*.json \) | grep -v demo)
@@ -1536,24 +1543,18 @@ function kube::release::docker::release() {
   for arch in "${archs[@]}"; do
     for binary in "${binaries[@]}"; do
 
-      # Temporary fix. hyperkube-arm isn't built in the release process, so we can't push it
-      # This if statement skips the push for hyperkube-arm
-      if [[ ${arch} != "arm" || ${binary} != "hyperkube" ]]; then
+      local docker_target="${KUBE_DOCKER_REGISTRY}/${binary}-${arch}:${KUBE_DOCKER_IMAGE_TAG}"
+      kube::log::status "Pushing ${binary} to ${docker_target}"
+      "${docker_push_cmd[@]}" push "${docker_target}"
 
+      # If we have a amd64 docker image. Tag it without -amd64 also and push it for compatibility with earlier versions
+      if [[ ${arch} == "amd64" ]]; then
+        local legacy_docker_target="${KUBE_DOCKER_REGISTRY}/${binary}:${KUBE_DOCKER_IMAGE_TAG}"
 
-        local docker_target="${KUBE_DOCKER_REGISTRY}/${binary}-${arch}:${KUBE_DOCKER_IMAGE_TAG}"
-        kube::log::status "Pushing ${binary} to ${docker_target}"
-        "${docker_push_cmd[@]}" push "${docker_target}"
+        "${DOCKER[@]}" tag -f "${docker_target}" "${legacy_docker_target}" 2>/dev/null
 
-        # If we have a amd64 docker image. Tag it without -amd64 also and push it for compatibility with earlier versions
-        if [[ ${arch} == "amd64" ]]; then
-          local legacy_docker_target="${KUBE_DOCKER_REGISTRY}/${binary}:${KUBE_DOCKER_IMAGE_TAG}"
-
-          "${DOCKER[@]}" tag -f "${docker_target}" "${legacy_docker_target}" 2>/dev/null
-
-          kube::log::status "Pushing ${binary} to ${legacy_docker_target}"
-          "${docker_push_cmd[@]}" push "${legacy_docker_target}"
-        fi
+        kube::log::status "Pushing ${binary} to ${legacy_docker_target}"
+        "${docker_push_cmd[@]}" push "${legacy_docker_target}"
       fi
     done
   done

@@ -35,14 +35,14 @@ import (
 	"golang.org/x/net/context"
 )
 
-func TestSet(t *testing.T) {
+func TestCreate(t *testing.T) {
 	client := framework.NewEtcdClient()
 	keysAPI := etcd.NewKeysAPI(client)
 	etcdStorage := etcdstorage.NewEtcdStorage(client, testapi.Default.Codec(), "", false)
 	ctx := context.TODO()
 	framework.WithEtcdKey(func(key string) {
 		testObject := api.ServiceAccount{ObjectMeta: api.ObjectMeta{Name: "foo"}}
-		if err := etcdStorage.Set(ctx, key, &testObject, nil, 0); err != nil {
+		if err := etcdStorage.Create(ctx, key, &testObject, nil, 0); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		resp, err := keysAPI.Get(ctx, key, nil)
@@ -94,11 +94,11 @@ func TestWriteTTL(t *testing.T) {
 	ctx := context.TODO()
 	framework.WithEtcdKey(func(key string) {
 		testObject := api.ServiceAccount{ObjectMeta: api.ObjectMeta{Name: "foo"}}
-		if err := etcdStorage.Set(ctx, key, &testObject, nil, 0); err != nil {
+		if err := etcdStorage.Create(ctx, key, &testObject, nil, 0); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		result := &api.ServiceAccount{}
-		err := etcdStorage.GuaranteedUpdate(ctx, key, result, false, func(obj runtime.Object, res storage.ResponseMeta) (runtime.Object, *uint64, error) {
+		err := etcdStorage.GuaranteedUpdate(ctx, key, result, false, nil, func(obj runtime.Object, res storage.ResponseMeta) (runtime.Object, *uint64, error) {
 			if in, ok := obj.(*api.ServiceAccount); !ok || in.Name != "foo" {
 				t.Fatalf("unexpected existing object: %v", obj)
 			}
@@ -120,7 +120,7 @@ func TestWriteTTL(t *testing.T) {
 		}
 
 		result = &api.ServiceAccount{}
-		err = etcdStorage.GuaranteedUpdate(ctx, key, result, false, func(obj runtime.Object, res storage.ResponseMeta) (runtime.Object, *uint64, error) {
+		err = etcdStorage.GuaranteedUpdate(ctx, key, result, false, nil, func(obj runtime.Object, res storage.ResponseMeta) (runtime.Object, *uint64, error) {
 			if in, ok := obj.(*api.ServiceAccount); !ok || in.Name != "out" {
 				t.Fatalf("unexpected existing object: %v", obj)
 			}
