@@ -25,6 +25,8 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/network"
 )
 
+const KubenetPluginName = "kubenet"
+
 type kubenetNetworkPlugin struct {
 	network.NoopNetworkPlugin
 }
@@ -38,7 +40,7 @@ func (plugin *kubenetNetworkPlugin) Init(host network.Host) error {
 }
 
 func (plugin *kubenetNetworkPlugin) Name() string {
-	return "kubenet"
+	return KubenetPluginName
 }
 
 func (plugin *kubenetNetworkPlugin) SetUpPod(namespace string, name string, id kubecontainer.ContainerID) error {

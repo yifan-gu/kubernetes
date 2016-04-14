@@ -34,6 +34,7 @@ import (
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	containertesting "k8s.io/kubernetes/pkg/kubelet/container/testing"
 	"k8s.io/kubernetes/pkg/kubelet/lifecycle"
+	"k8s.io/kubernetes/pkg/kubelet/network/kubenet"
 	"k8s.io/kubernetes/pkg/kubelet/rkt/mock_os"
 	"k8s.io/kubernetes/pkg/util/errors"
 	utiltesting "k8s.io/kubernetes/pkg/util/testing"
@@ -150,6 +151,11 @@ func makeRktPod(rktPodState rktapi.PodState,
 		Manifest:  mustMarshalPodManifest(podManifest),
 		StartedAt: podStartedAt,
 		CreatedAt: podCreatedAt,
+		Id:        rktPodID,
+		State:     rktPodState,
+		Networks:  []*rktapi.Network{{Name: kubenet.KubenetPluginName, Ipv4: podIP}},
+		Apps:      apps,
+		Manifest:  mustMarshalPodManifest(podManifest),
 	}
 }
 
@@ -1123,7 +1129,7 @@ func TestGenerateRunCommand(t *testing.T) {
 			[]string{},
 			"pod-hostname-foo",
 			nil,
-			"/bin/rkt/rkt --insecure-options=image,ondisk --local-config=/var/rkt/local/data --dir=/var/data run-prepared --net=rkt.kubernetes.io --hostname=pod-hostname-foo rkt-uuid-foo",
+			"/bin/rkt/rkt --insecure-options=image,ondisk --local-config=/var/rkt/local/data --dir=/var/data run-prepared --net=kubenet --hostname=pod-hostname-foo rkt-uuid-foo",
 		},
 		// Case #2, returns no dns, with host-net.
 		{
@@ -1161,7 +1167,7 @@ func TestGenerateRunCommand(t *testing.T) {
 			[]string{"."},
 			"pod-hostname-foo",
 			nil,
-			"/bin/rkt/rkt --insecure-options=image,ondisk --local-config=/var/rkt/local/data --dir=/var/data run-prepared --net=rkt.kubernetes.io --dns=127.0.0.1 --dns-search=. --dns-opt=ndots:5 --hostname=pod-hostname-foo rkt-uuid-foo",
+			"/bin/rkt/rkt --insecure-options=image,ondisk --local-config=/var/rkt/local/data --dir=/var/data run-prepared --net=kubenet --dns=127.0.0.1 --dns-search=. --dns-opt=ndots:5 --hostname=pod-hostname-foo rkt-uuid-foo",
 		},
 		// Case #4, returns no dns, dns searches, with host-network.
 		{
