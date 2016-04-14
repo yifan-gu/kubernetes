@@ -25,13 +25,19 @@ SYSTEM_NAMESPACE=kube-system
 trusty_master=${TRUSTY_MASTER:-false}
 
 function ensure_python() {
-  if ! python --version > /dev/null 2>&1; then    
+  if ! python --version > /dev/null 2>&1; then 
     echo "No python on the machine, will use a python image"
     local -r PYTHON_IMAGE=gcr.io/google_containers/python:v1
-    export PYTHON="docker run --interactive --rm --net=none ${PYTHON_IMAGE} python"
+    if [[ "${MASTER_CONTAINER_RUNTIME}" == "rkt" ]]; then
+      export PYTHON="/opt/rkt/rkt run --interactive --net=none --stage1-path=/opt/rkt/stage1-fly.aci --insecure-options=image docker://${PYTHON_IMAGE} --exec=/usr/local/bin/python -- "
+    else
+      export PYTHON="docker run --interactive --rm --net=none ${PYTHON_IMAGE} python"
+    fi
   else
     export PYTHON=python
   fi
+
+  echo "PYTHON=$PYTHON"
 }
 
 # $1 filename of addon to start.
@@ -102,6 +108,7 @@ while true; do
   start_sec=$(date +"%s")
   #kube-addon-update.sh must be deployed in the same directory as this file
   `dirname $0`/kube-addon-update.sh /etc/kubernetes/addons ${ADDON_CHECK_INTERVAL_SEC}
+  /opt/rkt/rkt gc --grace-period=0 --expire-prepared=0
   end_sec=$(date +"%s")
   len_sec=$((${end_sec}-${start_sec}))
   # subtract the time passed from the sleep time
