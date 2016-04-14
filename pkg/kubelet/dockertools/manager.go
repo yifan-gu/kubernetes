@@ -46,11 +46,12 @@ import (
 	proberesults "k8s.io/kubernetes/pkg/kubelet/prober/results"
 	"k8s.io/kubernetes/pkg/kubelet/qos"
 	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
+	"k8s.io/kubernetes/pkg/kubelet/util/cache"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
 	"k8s.io/kubernetes/pkg/runtime"
 	"k8s.io/kubernetes/pkg/securitycontext"
 	"k8s.io/kubernetes/pkg/types"
-	"k8s.io/kubernetes/pkg/util"
+	"k8s.io/kubernetes/pkg/util/flowcontrol"
 	"k8s.io/kubernetes/pkg/util/oom"
 	"k8s.io/kubernetes/pkg/util/procfs"
 	utilruntime "k8s.io/kubernetes/pkg/util/runtime"
@@ -60,7 +61,9 @@ import (
 const (
 	DockerType = "docker"
 
-	minimumDockerAPIVersion = "1.18"
+	minimumDockerAPIVersion = "1.20"
+
+	dockerv110APIVersion = "1.21"
 
 	// ndots specifies the minimum number of dots that a domain name must contain for the resolver to consider it as FQDN (fully-qualified)
 	// we want to able to consider SRV lookup names like _dns._udp.kube-dns.default.svc to be considered relative.
@@ -156,6 +159,9 @@ type DockerManager struct {
 	// A false value means the kubelet just backs off from setting it,
 	// it might already be true.
 	configureHairpinMode bool
+
+	// The api version cache of docker daemon.
+	versionCache *cache.VersionCache
 }
 
 // A subset of the pod.Manager interface extracted for testing purposes.
@@ -194,11 +200,13 @@ func NewDockerManager(
 	oomAdjuster *oom.OOMAdjuster,
 	procFs procfs.ProcFSInterface,
 	cpuCFSQuota bool,
-	imageBackOff *util.Backoff,
+	imageBackOff *flowcontrol.Backoff,
 	serializeImagePulls bool,
 	enableCustomMetrics bool,
 	hairpinMode bool,
 	options ...kubecontainer.Option) *DockerManager {
+	// Wrap the docker client with instrumentedDockerInterface
+	client = newInstrumentedDockerInterface(client)
 
 	// Work out the location of the Docker runtime, defaulting to /var/lib/docker
 	// if there are any problems.
@@ -243,6 +251,15 @@ func NewDockerManager(
 	// apply optional settings..
 	for _, optf := range options {
 		optf(dm)
+	}
+
+	// initialize versionCache with a updater
+	dm.versionCache = cache.NewVersionCache(func() (kubecontainer.Version, kubecontainer.Version, error) {
+		return dm.getVersionInfo()
+	})
+	// update version cache periodically.
+	if dm.machineInfo != nil {
+		dm.versionCache.UpdateCachePeriodly(dm.machineInfo.MachineID)
 	}
 
 	return dm
@@ -382,11 +399,14 @@ func (dm *DockerManager) inspectContainer(id string, podName, podNamespace strin
 
 		terminationMessagePath := containerInfo.TerminationMessagePath
 		if terminationMessagePath != "" {
-			if path, found := iResult.Volumes[terminationMessagePath]; found {
-				if data, err := ioutil.ReadFile(path); err != nil {
-					message = fmt.Sprintf("Error on reading termination-log %s: %v", path, err)
-				} else {
-					message = string(data)
+			for _, mount := range iResult.Mounts {
+				if mount.Destination == terminationMessagePath {
+					path := mount.Source
+					if data, err := ioutil.ReadFile(path); err != nil {
+						message = fmt.Sprintf("Error on reading termination-log %s: %v", path, err)
+					} else {
+						message = string(data)
+					}
 				}
 			}
 		}
@@ -498,7 +518,8 @@ func (dm *DockerManager) runContainer(
 	ipcMode string,
 	utsMode string,
 	pidMode string,
-	restartCount int) (kubecontainer.ContainerID, error) {
+	restartCount int,
+	oomScoreAdj int) (kubecontainer.ContainerID, error) {
 
 	dockerName := KubeletContainerName{
 		PodFullName:   kubecontainer.GetPodFullName(pod),
@@ -577,6 +598,14 @@ func (dm *DockerManager) runContainer(
 		MemorySwap:  -1,
 		CPUShares:   cpuShares,
 		SecurityOpt: securityOpts,
+	}
+
+	// If current api version is newer than docker 1.10 requested, set OomScoreAdj to HostConfig
+	result, err := dm.checkDockerAPIVersion(dockerv110APIVersion)
+	if err != nil {
+		glog.Errorf("Failed to check docker api version: %v", err)
+	} else if result >= 0 {
+		hc.OomScoreAdj = oomScoreAdj
 	}
 
 	if dm.cpuCFSQuota {
@@ -964,21 +993,6 @@ func (dm *DockerManager) checkVersionCompatibility() error {
 	return nil
 }
 
-// The first version of docker that supports exec natively is 1.3.0 == API 1.15
-var dockerAPIVersionWithExec = "1.15"
-
-func (dm *DockerManager) nativeExecSupportExists() (bool, error) {
-	version, err := dm.APIVersion()
-	if err != nil {
-		return false, err
-	}
-	result, err := version.Compare(dockerAPIVersionWithExec)
-	if result >= 0 {
-		return true, err
-	}
-	return false, err
-}
-
 func (dm *DockerManager) defaultSecurityOpt() ([]string, error) {
 	version, err := dm.APIVersion()
 	if err != nil {
@@ -995,32 +1009,8 @@ func (dm *DockerManager) defaultSecurityOpt() ([]string, error) {
 	return nil, nil
 }
 
-func (dm *DockerManager) getRunInContainerCommand(containerID kubecontainer.ContainerID, cmd []string) (*exec.Cmd, error) {
-	args := append([]string{"exec"}, cmd...)
-	command := exec.Command("/usr/sbin/nsinit", args...)
-	command.Dir = fmt.Sprintf("/var/lib/docker/execdriver/native/%s", containerID.ID)
-	return command, nil
-}
-
-func (dm *DockerManager) runInContainerUsingNsinit(containerID kubecontainer.ContainerID, cmd []string) ([]byte, error) {
-	c, err := dm.getRunInContainerCommand(containerID, cmd)
-	if err != nil {
-		return nil, err
-	}
-	return c.CombinedOutput()
-}
-
-// RunInContainer uses nsinit to run the command inside the container identified by containerID
+// RunInContainer run the command inside the container identified by containerID
 func (dm *DockerManager) RunInContainer(containerID kubecontainer.ContainerID, cmd []string) ([]byte, error) {
-	// If native exec support does not exist in the local docker daemon use nsinit.
-	useNativeExec, err := dm.nativeExecSupportExists()
-	if err != nil {
-		return nil, err
-	}
-	if !useNativeExec {
-		glog.V(2).Infof("Using nsinit to run the command %+v inside container %s", cmd, containerID)
-		return dm.runInContainerUsingNsinit(containerID, cmd)
-	}
 	glog.V(2).Infof("Using docker native exec to run cmd %+v inside container %s", cmd, containerID)
 	createOpts := docker.CreateExecOptions{
 		Container:    containerID.ID,
@@ -1392,10 +1382,6 @@ func (dm *DockerManager) killContainer(containerID kubecontainer.ContainerID, co
 		gracePeriod = minimumGracePeriodInSeconds
 	}
 	err := dm.client.StopContainer(ID, uint(gracePeriod))
-	if _, ok := err.(*docker.ContainerNotRunning); ok && err != nil {
-		glog.V(4).Infof("Container %q has already exited", name)
-		return nil
-	}
 	if err == nil {
 		glog.V(2).Infof("Container %q exited after %s", name, unversioned.Now().Sub(start.Time))
 	} else {
@@ -1467,17 +1453,7 @@ func (dm *DockerManager) applyOOMScoreAdj(container *api.Container, containerInf
 		}
 		return err
 	}
-	// Set OOM score of the container based on the priority of the container.
-	// Processes in lower-priority pods should be killed first if the system runs out of memory.
-	// The main pod infrastructure container is considered high priority, since if it is killed the
-	// whole pod will die.
-	// TODO: Cache this value.
-	var oomScoreAdj int
-	if containerInfo.Name == PodInfraContainerName {
-		oomScoreAdj = qos.PodInfraOOMAdj
-	} else {
-		oomScoreAdj = qos.GetContainerOOMScoreAdjust(container, int64(dm.machineInfo.MemoryCapacity))
-	}
+	oomScoreAdj := dm.calculateOomScoreAdj(container)
 	if err = dm.oomAdjuster.ApplyOOMScoreAdjContainer(cgroupName, oomScoreAdj, 5); err != nil {
 		if err == os.ErrNotExist {
 			// Container exited. We cannot do anything about it. Ignore this error.
@@ -1511,7 +1487,10 @@ func (dm *DockerManager) runContainerInPod(pod *api.Pod, container *api.Containe
 	if usesHostNetwork(pod) {
 		utsMode = namespaceModeHost
 	}
-	id, err := dm.runContainer(pod, container, opts, ref, netMode, ipcMode, utsMode, pidMode, restartCount)
+
+	oomScoreAdj := dm.calculateOomScoreAdj(container)
+
+	id, err := dm.runContainer(pod, container, opts, ref, netMode, ipcMode, utsMode, pidMode, restartCount, oomScoreAdj)
 	if err != nil {
 		return kubecontainer.ContainerID{}, fmt.Errorf("runContainer: %v", err)
 	}
@@ -1550,9 +1529,12 @@ func (dm *DockerManager) runContainerInPod(pod *api.Pod, container *api.Containe
 		return kubecontainer.ContainerID{}, fmt.Errorf("can't get init PID for container %q", id)
 	}
 
-	if err := dm.applyOOMScoreAdj(container, containerInfo); err != nil {
-		return kubecontainer.ContainerID{}, fmt.Errorf("failed to apply oom-score-adj to container %q- %v", err, containerInfo.Name)
+	// Check if current docker version is higher than 1.10. Otherwise, we have to apply OOMScoreAdj instead of using docker API.
+	err = dm.applyOOMScoreAdjIfNeeded(container, containerInfo)
+	if err != nil {
+		return kubecontainer.ContainerID{}, err
 	}
+
 	// The addNDotsOption call appends the ndots option to the resolv.conf file generated by docker.
 	// This resolv.conf file is shared by all containers of the same pod, and needs to be modified only once per pod.
 	// we modify it when the pause container is created since it is the first container created in the pod since it holds
@@ -1565,6 +1547,69 @@ func (dm *DockerManager) runContainerInPod(pod *api.Pod, container *api.Containe
 	}
 
 	return id, err
+}
+
+func (dm *DockerManager) applyOOMScoreAdjIfNeeded(container *api.Container, containerInfo *docker.Container) error {
+	// Compare current API version with expected api version.
+	result, err := dm.checkDockerAPIVersion(dockerv110APIVersion)
+	if err != nil {
+		return fmt.Errorf("Failed to check docker api version: %v", err)
+	}
+	// If current api version is older than OOMScoreAdj requested, use the old way.
+	if result < 0 {
+		if err := dm.applyOOMScoreAdj(container, containerInfo); err != nil {
+			return fmt.Errorf("Failed to apply oom-score-adj to container %q- %v", err, containerInfo.Name)
+		}
+	}
+
+	return nil
+}
+
+func (dm *DockerManager) calculateOomScoreAdj(container *api.Container) int {
+	// Set OOM score of the container based on the priority of the container.
+	// Processes in lower-priority pods should be killed first if the system runs out of memory.
+	// The main pod infrastructure container is considered high priority, since if it is killed the
+	// whole pod will die.
+	var oomScoreAdj int
+	if container.Name == PodInfraContainerName {
+		oomScoreAdj = qos.PodInfraOOMAdj
+	} else {
+		oomScoreAdj = qos.GetContainerOOMScoreAdjust(container, int64(dm.machineInfo.MemoryCapacity))
+
+	}
+
+	return oomScoreAdj
+}
+
+// getCachedVersionInfo gets cached version info of docker runtime.
+func (dm *DockerManager) getCachedVersionInfo() (kubecontainer.Version, kubecontainer.Version, error) {
+	apiVersion, daemonVersion, err := dm.versionCache.Get(dm.machineInfo.MachineID)
+	if err != nil {
+		glog.Errorf("Failed to get cached docker api version %v ", err)
+	}
+	// If we got nil versions, try to update version info.
+	if apiVersion == nil || daemonVersion == nil {
+		dm.versionCache.Update(dm.machineInfo.MachineID)
+	}
+	return apiVersion, daemonVersion, err
+}
+
+// checkDockerAPIVersion checks current docker API version against expected version.
+// Return:
+// 1 : newer than expected version
+// -1: older than expected version
+// 0 : same version
+func (dm *DockerManager) checkDockerAPIVersion(expectedVersion string) (int, error) {
+	apiVersion, _, err := dm.getCachedVersionInfo()
+	if err != nil {
+		return 0, err
+	}
+	result, err := apiVersion.Compare(expectedVersion)
+	if err != nil {
+		return 0, fmt.Errorf("Failed to compare current docker api version %v with OOMScoreAdj supported Docker version %q - %v",
+			apiVersion, expectedVersion, err)
+	}
+	return result, nil
 }
 
 func addNDotsOption(resolvFilePath string) error {
@@ -1770,7 +1815,7 @@ func (dm *DockerManager) computePodContainerChanges(pod *api.Pod, podStatus *kub
 }
 
 // Sync the running pod to match the specified desired pod.
-func (dm *DockerManager) SyncPod(pod *api.Pod, _ api.PodStatus, podStatus *kubecontainer.PodStatus, pullSecrets []api.Secret, backOff *util.Backoff) (result kubecontainer.PodSyncResult) {
+func (dm *DockerManager) SyncPod(pod *api.Pod, _ api.PodStatus, podStatus *kubecontainer.PodStatus, pullSecrets []api.Secret, backOff *flowcontrol.Backoff) (result kubecontainer.PodSyncResult) {
 	start := time.Now()
 	defer func() {
 		metrics.ContainerManagerLatency.WithLabelValues("SyncPod").Observe(metrics.SinceInMicroseconds(start))
@@ -2020,7 +2065,7 @@ func getUidFromUser(id string) string {
 // If all instances of a container are garbage collected, doBackOff will also return false, which means the container may be restarted before the
 // backoff deadline. However, because that won't cause error and the chance is really slim, we can just ignore it for now.
 // If a container is still in backoff, the function will return a brief backoff error and a detailed error message.
-func (dm *DockerManager) doBackOff(pod *api.Pod, container *api.Container, podStatus *kubecontainer.PodStatus, backOff *util.Backoff) (bool, error, string) {
+func (dm *DockerManager) doBackOff(pod *api.Pod, container *api.Container, podStatus *kubecontainer.PodStatus, backOff *flowcontrol.Backoff) (bool, error, string) {
 	var cStatus *kubecontainer.ContainerStatus
 	// Use the finished time of the latest exited container as the start point to calculate whether to do back-off.
 	// TODO(random-liu): Better define backoff start point; add unit and e2e test after we finalize this. (See github issue #22240)
@@ -2149,4 +2194,18 @@ func (dm *DockerManager) GetPodStatus(uid types.UID, name, namespace string) (*k
 
 	podStatus.ContainerStatuses = containerStatuses
 	return podStatus, nil
+}
+
+// getVersionInfo returns apiVersion & daemonVersion of docker runtime
+func (dm *DockerManager) getVersionInfo() (kubecontainer.Version, kubecontainer.Version, error) {
+	apiVersion, err := dm.APIVersion()
+	if err != nil {
+		return nil, nil, err
+	}
+	daemonVersion, err := dm.Version()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return apiVersion, daemonVersion, nil
 }

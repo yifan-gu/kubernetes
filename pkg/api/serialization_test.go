@@ -17,12 +17,15 @@ limitations under the License.
 package api_test
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"math/rand"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/davecgh/go-spew/spew"
+	proto "github.com/golang/protobuf/proto"
 	flag "github.com/spf13/pflag"
 	"github.com/ugorji/go/codec"
 
@@ -58,9 +61,16 @@ func fuzzInternalObject(t *testing.T, forVersion unversioned.GroupVersion, item 
 	return item
 }
 
-func roundTrip(t *testing.T, codec runtime.Codec, item runtime.Object) {
-	//t.Logf("codec: %#v", codec)
+func dataAsString(data []byte) string {
+	dataString := string(data)
+	if !strings.HasPrefix(dataString, "{") {
+		dataString = "\n" + hex.Dump(data)
+		proto.NewBuffer(make([]byte, 0, 1024)).DebugPrint("decoded object", data)
+	}
+	return dataString
+}
 
+func roundTrip(t *testing.T, codec runtime.Codec, item runtime.Object) {
 	printer := spew.ConfigState{DisableMethods: true}
 
 	name := reflect.TypeOf(item).Elem().Name()
@@ -72,11 +82,11 @@ func roundTrip(t *testing.T, codec runtime.Codec, item runtime.Object) {
 
 	obj2, err := runtime.Decode(codec, data)
 	if err != nil {
-		t.Errorf("0: %v: %v\nCodec: %v\nData: %s\nSource: %#v", name, err, codec, string(data), printer.Sprintf("%#v", item))
-		return
+		t.Errorf("0: %v: %v\nCodec: %v\nData: %s\nSource: %#v", name, err, codec, dataAsString(data), printer.Sprintf("%#v", item))
+		panic("failed")
 	}
 	if !api.Semantic.DeepEqual(item, obj2) {
-		t.Errorf("\n1: %v: diff: %v\nCodec: %v\nSource:\n\n%#v\n\nEncoded:\n\n%s\n\nFinal:\n\n%#v", name, diff.ObjectGoPrintDiff(item, obj2), codec, printer.Sprintf("%#v", item), string(data), printer.Sprintf("%#v", obj2))
+		t.Errorf("\n1: %v: diff: %v\nCodec: %v\nSource:\n\n%#v\n\nEncoded:\n\n%s\n\nFinal:\n\n%#v", name, diff.ObjectGoPrintDiff(item, obj2), codec, printer.Sprintf("%#v", item), dataAsString(data), printer.Sprintf("%#v", obj2))
 		return
 	}
 
@@ -118,9 +128,6 @@ func roundTripSame(t *testing.T, group testapi.TestGroup, item runtime.Object, e
 
 // For debugging problems
 func TestSpecificKind(t *testing.T) {
-	// api.Scheme.Log(t)
-	// defer api.Scheme.Log(nil)
-
 	kind := "DaemonSet"
 	for i := 0; i < *fuzzIters; i++ {
 		doRoundTripTest(testapi.Groups["extensions"], kind, t)
@@ -131,9 +138,6 @@ func TestSpecificKind(t *testing.T) {
 }
 
 func TestList(t *testing.T) {
-	// api.Scheme.Log(t)
-	// defer api.Scheme.Log(nil)
-
 	kind := "List"
 	item, err := api.Scheme.New(api.SchemeGroupVersion.WithKind(kind))
 	if err != nil {
@@ -143,15 +147,19 @@ func TestList(t *testing.T) {
 	roundTripSame(t, testapi.Default, item)
 }
 
-var nonRoundTrippableTypes = sets.NewString("ExportOptions")
+var nonRoundTrippableTypes = sets.NewString(
+	"ExportOptions",
+	// WatchEvent does not include kind and version and can only be deserialized
+	// implicitly (if the caller expects the specific object). The watch call defines
+	// the schema by content type, rather than via kind/version included in each
+	// object.
+	"WatchEvent",
+)
 
 var nonInternalRoundTrippableTypes = sets.NewString("List", "ListOptions", "ExportOptions")
 var nonRoundTrippableTypesByVersion = map[string][]string{}
 
 func TestRoundTripTypes(t *testing.T) {
-	// api.Scheme.Log(t)
-	// defer api.Scheme.Log(nil)
-
 	for groupKey, group := range testapi.Groups {
 		for kind := range group.InternalTypes() {
 			t.Logf("working on %v in %v", kind, groupKey)
@@ -280,6 +288,26 @@ func BenchmarkEncodeCodec(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if _, err := runtime.Encode(testapi.Default.Codec(), &items[i%width]); err != nil {
+			b.Fatal(err)
+		}
+	}
+	b.StopTimer()
+}
+
+// BenchmarkEncodeCodecFromInternal measures the cost of performing a codec encode,
+// including conversions.
+func BenchmarkEncodeCodecFromInternal(b *testing.B) {
+	items := benchmarkItems()
+	width := len(items)
+	encodable := make([]api.Pod, width)
+	for i := range items {
+		if err := api.Scheme.Convert(&items[i], &encodable[i]); err != nil {
+			b.Fatal(err)
+		}
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := runtime.Encode(testapi.Default.Codec(), &encodable[i%width]); err != nil {
 			b.Fatal(err)
 		}
 	}

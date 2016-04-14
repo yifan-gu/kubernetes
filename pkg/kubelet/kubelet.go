@@ -72,6 +72,7 @@ import (
 	"k8s.io/kubernetes/pkg/util/atomic"
 	"k8s.io/kubernetes/pkg/util/bandwidth"
 	utilerrors "k8s.io/kubernetes/pkg/util/errors"
+	"k8s.io/kubernetes/pkg/util/flowcontrol"
 	kubeio "k8s.io/kubernetes/pkg/util/io"
 	"k8s.io/kubernetes/pkg/util/mount"
 	utilnet "k8s.io/kubernetes/pkg/util/net"
@@ -88,6 +89,7 @@ import (
 	"k8s.io/kubernetes/pkg/volume"
 	"k8s.io/kubernetes/pkg/watch"
 	"k8s.io/kubernetes/plugin/pkg/scheduler/algorithm/predicates"
+	"k8s.io/kubernetes/plugin/pkg/scheduler/schedulercache"
 	"k8s.io/kubernetes/third_party/golang/expansion"
 )
 
@@ -191,6 +193,7 @@ func NewMainKubelet(
 	cgroupRoot string,
 	containerRuntime string,
 	rktPath string,
+	rktAPIEndpoint string,
 	rktStage1Image string,
 	mounter mount.Interface,
 	writer kubeio.Writer,
@@ -223,7 +226,6 @@ func NewMainKubelet(
 	if resyncInterval <= 0 {
 		return nil, fmt.Errorf("invalid sync frequency %d", resyncInterval)
 	}
-	dockerClient = dockertools.NewInstrumentedDockerInterface(dockerClient)
 
 	serviceStore := cache.NewStore(cache.MetaNamespaceKeyFunc)
 	if kubeClient != nil {
@@ -259,7 +261,7 @@ func NewMainKubelet(
 		cache.NewReflector(listWatch, &api.Node{}, nodeStore, 0).Run()
 	}
 	nodeLister := &cache.StoreToNodeLister{Store: nodeStore}
-	nodeInfo := &predicates.CachedNodeInfo{nodeLister}
+	nodeInfo := &predicates.CachedNodeInfo{StoreToNodeLister: nodeLister}
 
 	// TODO: get the real node object of ourself,
 	// and use the real node name and UID.
@@ -363,7 +365,7 @@ func NewMainKubelet(
 	}
 
 	procFs := procfs.NewProcFS()
-	imageBackOff := util.NewBackOff(backOffPeriod, MaxContainerBackOff)
+	imageBackOff := flowcontrol.NewBackOff(backOffPeriod, MaxContainerBackOff)
 
 	klet.livenessManager = proberesults.NewManager()
 
@@ -414,14 +416,18 @@ func NewMainKubelet(
 			Path:            rktPath,
 			Stage1Image:     rktStage1Image,
 			InsecureOptions: "image,ondisk",
+			LocalConfigDir:  "/etc/rkt",
+			Dir:             "/var/lib/rkt",
 		}
 		rktRuntime, err := rkt.New(
+			rktAPIEndpoint,
 			conf,
 			klet,
 			recorder,
 			containerRefManager,
 			klet.livenessManager,
 			klet.volumeManager,
+			klet.httpClient,
 			imageBackOff,
 			serializeImagePulls,
 		)
@@ -474,7 +480,7 @@ func NewMainKubelet(
 	klet.workQueue = queue.NewBasicWorkQueue()
 	klet.podWorkers = newPodWorkers(klet.syncPod, recorder, klet.workQueue, klet.resyncInterval, backOffPeriod, klet.podCache)
 
-	klet.backOff = util.NewBackOff(backOffPeriod, MaxContainerBackOff)
+	klet.backOff = flowcontrol.NewBackOff(backOffPeriod, MaxContainerBackOff)
 	klet.podKillingCh = make(chan *kubecontainer.PodPair, podKillingChannelCapacity)
 	klet.sourcesSeen = sets.NewString()
 	klet.setNodeStatusFuncs = klet.defaultNodeStatusFuncs()
@@ -690,7 +696,7 @@ type Kubelet struct {
 	syncLoopMonitor atomic.Value
 
 	// Container restart Backoff
-	backOff *util.Backoff
+	backOff *flowcontrol.Backoff
 
 	// Channel for sending pods to kill.
 	podKillingCh chan *kubecontainer.PodPair
@@ -1208,9 +1214,9 @@ func (kl *Kubelet) relabelVolumes(pod *api.Pod, volumes kubecontainer.VolumeMap)
 	volumeContext := fmt.Sprintf("%s:%s:%s:%s", rootDirSELinuxOptions.User, rootDirSELinuxOptions.Role, rootDirSELinuxOptions.Type, rootDirSELinuxOptions.Level)
 
 	for _, vol := range volumes {
-		if vol.Builder.GetAttributes().Managed && vol.Builder.GetAttributes().SupportsSELinux {
+		if vol.Mounter.GetAttributes().Managed && vol.Mounter.GetAttributes().SupportsSELinux {
 			// Relabel the volume and its content to match the 'Level' of the pod
-			err := filepath.Walk(vol.Builder.GetPath(), func(path string, info os.FileInfo, err error) error {
+			err := filepath.Walk(vol.Mounter.GetPath(), func(path string, info os.FileInfo, err error) error {
 				if err != nil {
 					return err
 				}
@@ -1246,14 +1252,14 @@ func makeMounts(pod *api.Pod, podDir string, container *api.Container, hostName,
 		// If the volume supports SELinux and it has not been
 		// relabeled already and it is not a read-only volume,
 		// relabel it and mark it as labeled
-		if vol.Builder.GetAttributes().Managed && vol.Builder.GetAttributes().SupportsSELinux && !vol.SELinuxLabeled {
+		if vol.Mounter.GetAttributes().Managed && vol.Mounter.GetAttributes().SupportsSELinux && !vol.SELinuxLabeled {
 			vol.SELinuxLabeled = true
 			relabelVolume = true
 		}
 		mounts = append(mounts, kubecontainer.Mount{
 			Name:           mount.Name,
 			ContainerPath:  mount.MountPath,
-			HostPath:       vol.Builder.GetPath(),
+			HostPath:       vol.Mounter.GetPath(),
 			ReadOnly:       mount.ReadOnly,
 			SELinuxRelabel: relabelVolume,
 		})
@@ -1332,9 +1338,10 @@ func makePortMappings(container *api.Container) (ports []kubecontainer.PortMappi
 	return
 }
 
-func generatePodHostNameAndDomain(pod *api.Pod, clusterDomain string) (string, string) {
+func (kl *Kubelet) GeneratePodHostNameAndDomain(pod *api.Pod) (string, string) {
 	// TODO(vmarmol): Handle better.
 	// Cap hostname at 63 chars (specification is 64bytes which is 63 chars and the null terminating char).
+	clusterDomain := kl.clusterDomain
 	const hostnameMaxLen = 63
 	podAnnotations := pod.Annotations
 	if podAnnotations == nil {
@@ -1364,7 +1371,7 @@ func generatePodHostNameAndDomain(pod *api.Pod, clusterDomain string) (string, s
 func (kl *Kubelet) GenerateRunContainerOptions(pod *api.Pod, container *api.Container, podIP string) (*kubecontainer.RunContainerOptions, error) {
 	var err error
 	opts := &kubecontainer.RunContainerOptions{CgroupParent: kl.cgroupRoot}
-	hostname, hostDomainName := generatePodHostNameAndDomain(pod, kl.clusterDomain)
+	hostname, hostDomainName := kl.GeneratePodHostNameAndDomain(pod)
 	opts.Hostname = hostname
 	vol, ok := kl.volumeManager.GetVolumes(pod.UID)
 	if !ok {
@@ -1795,6 +1802,9 @@ func (kl *Kubelet) syncPod(pod *api.Pod, mirrorPod *api.Pod, podStatus *kubecont
 		return err
 	}
 
+	if !kl.shapingEnabled() {
+		return nil
+	}
 	ingress, egress, err := extractBandwidthResources(pod)
 	if err != nil {
 		return err
@@ -1980,12 +1990,12 @@ func (kl *Kubelet) cleanupOrphanedVolumes(pods []*api.Pod, runningPods []*kubeco
 			// TODO(yifan): Refactor this hacky string manipulation.
 			kl.volumeManager.DeleteVolumes(types.UID(parts[0]))
 			// Get path reference count
-			refs, err := mount.GetMountRefs(kl.mounter, cleanerTuple.Cleaner.GetPath())
+			refs, err := mount.GetMountRefs(kl.mounter, cleanerTuple.Unmounter.GetPath())
 			if err != nil {
 				return fmt.Errorf("Could not get mount path references %v", err)
 			}
 			//TODO (jonesdl) This should not block other kubelet synchronization procedures
-			err = cleanerTuple.Cleaner.TearDown()
+			err = cleanerTuple.Unmounter.TearDown()
 			if err != nil {
 				glog.Errorf("Could not tear down volume %q: %v", name, err)
 			}
@@ -2111,7 +2121,7 @@ func (kl *Kubelet) deletePod(pod *api.Pod) error {
 	if runningPod.IsEmpty() {
 		return fmt.Errorf("pod not found")
 	}
-	podPair := kubecontainer.PodPair{pod, &runningPod}
+	podPair := kubecontainer.PodPair{APIPod: pod, RunningPod: &runningPod}
 
 	kl.podKillingCh <- &podPair
 	// TODO: delete the mirror pod here?
@@ -2156,7 +2166,7 @@ func (kl *Kubelet) HandlePodCleanups() error {
 	}
 	for _, pod := range runningPods {
 		if _, found := desiredPods[pod.ID]; !found {
-			kl.podKillingCh <- &kubecontainer.PodPair{nil, pod}
+			kl.podKillingCh <- &kubecontainer.PodPair{APIPod: nil, RunningPod: pod}
 		}
 	}
 
@@ -2318,32 +2328,63 @@ func (kl *Kubelet) rejectPod(pod *api.Pod, reason, message string) {
 		Message: "Pod " + message})
 }
 
+// getNodeAnyWay() must return a *api.Node which is required by RunGeneralPredicates().
+// The *api.Node is obtained as follows:
+// Return kubelet's nodeInfo for this node, except on error or if in standalone mode,
+// in which case return a manufactured nodeInfo representing a node with no pods,
+// zero capacity, and the default labels.
+func (kl *Kubelet) getNodeAnyWay() (*api.Node, error) {
+	if !kl.standaloneMode {
+		if n, err := kl.nodeInfo.GetNodeInfo(kl.nodeName); err == nil {
+			return n, nil
+		}
+	}
+	return kl.initialNodeStatus()
+}
+
 // canAdmitPod determines if a pod can be admitted, and gives a reason if it
 // cannot. "pod" is new pod, while "pods" include all admitted pods plus the
 // new pod. The function returns a boolean value indicating whether the pod
 // can be admitted, a brief single-word reason and a message explaining why
 // the pod cannot be admitted.
-//
-// This needs to be kept in sync with the scheduler's and daemonset's fit predicates,
-// otherwise there will inevitably be pod delete create loops. This will be fixed
-// once we can extract these predicates into a common library. (#12744)
 func (kl *Kubelet) canAdmitPod(pods []*api.Pod, pod *api.Pod) (bool, string, string) {
-	if hasHostPortConflicts(pods) {
-		return false, "HostPortConflict", "cannot start the pod due to host port conflict."
+	node, err := kl.getNodeAnyWay()
+	if err != nil {
+		glog.Errorf("Cannot get Node info: %v", err)
+		return false, "InvalidNodeInfo", "Kubelet cannot get node info."
 	}
-	if !kl.matchesNodeSelector(pod) {
-		return false, "NodeSelectorMismatching", "cannot be started due to node selector mismatch"
+	otherPods := []*api.Pod{}
+	for _, p := range pods {
+		if p != pod {
+			otherPods = append(otherPods, p)
+		}
 	}
-	cpu, memory := kl.hasInsufficientfFreeResources(pods)
-	if cpu {
-		return false, "InsufficientFreeCPU", "cannot start the pod due to insufficient free CPU."
-	} else if memory {
-		return false, "InsufficientFreeMemory", "cannot be started due to insufficient free memory"
+	nodeInfo := schedulercache.CreateNodeNameToInfoMap(otherPods)[kl.nodeName]
+	fit, err := predicates.RunGeneralPredicates(pod, kl.nodeName, nodeInfo, node)
+	if !fit {
+		if re, ok := err.(*predicates.PredicateFailureError); ok {
+			reason := re.PredicateName
+			message := re.Error()
+			glog.V(2).Infof("Predicate failed on Pod: %v, for reason: %v", format.Pod(pod), message)
+			return fit, reason, message
+		}
+		if re, ok := err.(*predicates.InsufficientResourceError); ok {
+			reason := fmt.Sprintf("OutOf%s", re.ResourceName)
+			message := re.Error()
+			glog.V(2).Infof("Predicate failed on Pod: %v, for reason: %v", format.Pod(pod), message)
+			return fit, reason, message
+		}
+		reason := "UnexpectedPredicateFailureType"
+		message := fmt.Sprintf("GeneralPredicates failed due to %v, which is unexpected.", err)
+		glog.Warningf("Failed to admit pod %v - %s", format.Pod(pod), message)
+		return fit, reason, message
 	}
+	// TODO: When disk space scheduling is implemented (#11976), remove the out-of-disk check here and
+	// add the disk space predicate to predicates.GeneralPredicates.
 	if kl.isOutOfDisk() {
+		glog.Warningf("Failed to admit pod %v - %s", format.Pod(pod), "predicate fails due to isOutOfDisk")
 		return false, "OutOfDisk", "cannot be started due to lack of disk space."
 	}
-
 	return true, "", ""
 }
 
@@ -2731,11 +2772,14 @@ func (kl *Kubelet) reconcileCBR0(podCIDR string) error {
 	if err := ensureCbr0(cidr, kl.hairpinMode == componentconfig.PromiscuousBridge, kl.babysitDaemons); err != nil {
 		return err
 	}
-	if kl.shaper == nil {
-		glog.V(5).Info("Shaper is nil, creating")
-		kl.shaper = bandwidth.NewTCShaper("cbr0")
+	if kl.shapingEnabled() {
+		if kl.shaper == nil {
+			glog.V(5).Info("Shaper is nil, creating")
+			kl.shaper = bandwidth.NewTCShaper("cbr0")
+		}
+		return kl.shaper.ReconcileInterface()
 	}
-	return kl.shaper.ReconcileInterface()
+	return nil
 }
 
 // updateNodeStatus updates node status to master with retries.
@@ -3383,7 +3427,8 @@ func (kl *Kubelet) convertStatusToAPIStatus(pod *api.Pod, podStatus *kubecontain
 		} else if reason == kubecontainer.ErrImagePullBackOff ||
 			reason == kubecontainer.ErrImageInspect ||
 			reason == kubecontainer.ErrImagePull ||
-			reason == kubecontainer.ErrImageNeverPull {
+			reason == kubecontainer.ErrImageNeverPull ||
+			reason == kubecontainer.RegistryUnavailable {
 			// mark it as waiting, reason will be filled bellow
 			containerStatus.State = api.ContainerState{Waiting: &api.ContainerStateWaiting{}}
 		} else if reason == kubecontainer.ErrRunContainer {
@@ -3588,9 +3633,22 @@ func (kl *Kubelet) updatePodCIDR(cidr string) {
 	if kl.networkPlugin != nil {
 		details := make(map[string]interface{})
 		details[network.NET_PLUGIN_EVENT_POD_CIDR_CHANGE_DETAIL_CIDR] = cidr
+		runtime, ok := kl.GetRuntime().(*rkt.Runtime)
+		if ok {
+			details[network.NET_PLUGIN_EVENT_POD_CIDR_CHANGE_DETAIL_PATH] = path.Join(runtime.GetConfig().LocalConfigDir, rkt.DefaultK8sNetConfigFile)
+		}
 		kl.networkPlugin.Event(network.NET_PLUGIN_EVENT_POD_CIDR_CHANGE, details)
 	}
 }
+
+func (kl *Kubelet) shapingEnabled() bool {
+	// Disable shaping if a network plugin is defined and supports shaping
+	if kl.networkPlugin != nil && kl.networkPlugin.Capabilities().Has(network.NET_PLUGIN_CAPABILITY_SHAPING) {
+		return false
+	}
+	return true
+}
+
 func (kl *Kubelet) GetNodeConfig() cm.NodeConfig {
 	return kl.containerManager.GetNodeConfig()
 }

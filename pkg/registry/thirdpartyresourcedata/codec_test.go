@@ -42,7 +42,7 @@ type FooList struct {
 	unversioned.TypeMeta `json:",inline"`
 	unversioned.ListMeta `json:"metadata,omitempty" description:"standard list metadata; see http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#metadata"`
 
-	items []Foo `json:"items"`
+	Items []Foo `json:"items"`
 }
 
 func TestCodec(t *testing.T) {
@@ -68,7 +68,7 @@ func TestCodec(t *testing.T) {
 			obj: &Foo{
 				ObjectMeta: api.ObjectMeta{
 					Name:              "bar",
-					CreationTimestamp: unversioned.Time{time.Unix(100, 0)},
+					CreationTimestamp: unversioned.Time{Time: time.Unix(100, 0)},
 				},
 				TypeMeta: unversioned.TypeMeta{Kind: "Foo"},
 			},
@@ -173,7 +173,7 @@ func TestCreater(t *testing.T) {
 			t.Errorf("[%s] unexpected non-error", test.name)
 		}
 		if !reflect.DeepEqual(test.expectedObj, out) {
-			t.Errorf("[%s] unexpected error: expect: %v, got: %v", test.expectedObj, out)
+			t.Errorf("[%s] unexpected error: expect: %v, got: %v", test.name, test.expectedObj, out)
 		}
 
 	}

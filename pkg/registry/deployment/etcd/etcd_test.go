@@ -39,7 +39,7 @@ const defaultReplicas = 100
 
 func newStorage(t *testing.T) (*DeploymentStorage, *etcdtesting.EtcdTestServer) {
 	etcdStorage, server := registrytest.NewEtcdStorage(t, extensions.GroupName)
-	restOptions := generic.RESTOptions{etcdStorage, generic.UndecoratedStorage, 1}
+	restOptions := generic.RESTOptions{Storage: etcdStorage, Decorator: generic.UndecoratedStorage, DeleteCollectionWorkers: 1}
 	deploymentStorage := NewStorage(restOptions)
 	return &deploymentStorage, server
 }
@@ -116,11 +116,6 @@ func TestUpdate(t *testing.T) {
 		// invalid updateFunc
 		func(obj runtime.Object) runtime.Object {
 			object := obj.(*extensions.Deployment)
-			object.UID = "newUID"
-			return object
-		},
-		func(obj runtime.Object) runtime.Object {
-			object := obj.(*extensions.Deployment)
 			object.Name = ""
 			return object
 		},
@@ -190,7 +185,7 @@ func TestScaleGet(t *testing.T) {
 	var deployment extensions.Deployment
 	ctx := api.WithNamespace(api.NewContext(), namespace)
 	key := etcdtest.AddPrefix("/deployments/" + namespace + "/" + name)
-	if err := storage.Deployment.Storage.Set(ctx, key, &validDeployment, &deployment, 0); err != nil {
+	if err := storage.Deployment.Storage.Create(ctx, key, &validDeployment, &deployment, 0); err != nil {
 		t.Fatalf("error setting new deployment (key: %s) %v: %v", key, validDeployment, err)
 	}
 
@@ -227,7 +222,7 @@ func TestScaleUpdate(t *testing.T) {
 	var deployment extensions.Deployment
 	ctx := api.WithNamespace(api.NewContext(), namespace)
 	key := etcdtest.AddPrefix("/deployments/" + namespace + "/" + name)
-	if err := storage.Deployment.Storage.Set(ctx, key, &validDeployment, &deployment, 0); err != nil {
+	if err := storage.Deployment.Storage.Create(ctx, key, &validDeployment, &deployment, 0); err != nil {
 		t.Fatalf("error setting new deployment (key: %s) %v: %v", key, validDeployment, err)
 	}
 	replicas := 12
@@ -264,7 +259,7 @@ func TestStatusUpdate(t *testing.T) {
 
 	ctx := api.WithNamespace(api.NewContext(), namespace)
 	key := etcdtest.AddPrefix("/deployments/" + namespace + "/" + name)
-	if err := storage.Deployment.Storage.Set(ctx, key, &validDeployment, nil, 0); err != nil {
+	if err := storage.Deployment.Storage.Create(ctx, key, &validDeployment, nil, 0); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	update := extensions.Deployment{

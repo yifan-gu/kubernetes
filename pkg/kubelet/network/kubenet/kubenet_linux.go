@@ -20,7 +20,10 @@ package kubenet
 
 import (
 	"fmt"
+	"io/ioutil"
 	"net"
+	"os"
+	"path"
 	"strings"
 	"syscall"
 
@@ -41,6 +44,8 @@ const (
 )
 
 type kubenetNetworkPlugin struct {
+	network.NoopNetworkPlugin
+
 	host      network.Host
 	netConfig *libcni.NetworkConfig
 	cniConfig *libcni.CNIConfig
@@ -70,7 +75,9 @@ func (plugin *kubenetNetworkPlugin) Init(host network.Host) error {
 		glog.Warningf("Failed to find default bridge MTU: %v", err)
 	}
 
-	return nil
+	// This will set bridge-nf-call-iptables=1 to ensure that kube proxy
+	// functions correctly.
+	return plugin.NoopNetworkPlugin.Init(host)
 }
 
 func findMinMTU() (*net.Interface, error) {
@@ -91,7 +98,7 @@ func findMinMTU() (*net.Interface, error) {
 	}
 
 	if mtu >= 999999 || mtu < 576 || defIntfIndex < 0 {
-		return nil, fmt.Errorf("no suitable interface", BridgeName)
+		return nil, fmt.Errorf("no suitable interface: %v", BridgeName)
 	}
 
 	return &intfs[defIntfIndex], nil
@@ -117,6 +124,8 @@ const NET_CONFIG_TEMPLATE = `{
 }`
 
 func (plugin *kubenetNetworkPlugin) Event(name string, details map[string]interface{}) {
+	var json string
+
 	if name != network.NET_PLUGIN_EVENT_POD_CIDR_CHANGE {
 		return
 	}
@@ -138,7 +147,8 @@ func (plugin *kubenetNetworkPlugin) Event(name string, details map[string]interf
 		// Set bridge address to first address in IPNet
 		cidr.IP.To4()[3] += 1
 
-		json := fmt.Sprintf(NET_CONFIG_TEMPLATE, BridgeName, plugin.MTU, network.DefaultInterfaceName, podCIDR, cidr.IP.String())
+		json = fmt.Sprintf(NET_CONFIG_TEMPLATE, BridgeName, plugin.MTU, network.DefaultInterfaceName, podCIDR, cidr.IP.String())
+		glog.V(2).Infof("CNI network config set to %v", json)
 		plugin.netConfig, err = libcni.ConfFromBytes([]byte(json))
 		if err == nil {
 			glog.V(5).Infof("CNI network config:\n%s", json)
@@ -151,6 +161,19 @@ func (plugin *kubenetNetworkPlugin) Event(name string, details map[string]interf
 
 	if err != nil {
 		glog.Warningf("Failed to generate CNI network config: %v", err)
+	}
+
+	configFilePath, ok := details[network.NET_PLUGIN_EVENT_POD_CIDR_CHANGE_DETAIL_PATH].(string)
+	if ok {
+		glog.V(5).Infof("Saving CNI config file at %q", configFilePath)
+		if err := os.MkdirAll(path.Dir(configFilePath), 0750); err != nil && !os.IsExist(err) {
+			glog.Errorf("CNI cannot save config file at %q: %v", configFilePath, err)
+			return
+		}
+		if err := ioutil.WriteFile(configFilePath, []byte(json), 0640); err != nil {
+			glog.Errorf("CNI cannot save config file at %q: %v", configFilePath, err)
+			return
+		}
 	}
 }
 
@@ -197,6 +220,7 @@ func (plugin *kubenetNetworkPlugin) SetUpPod(namespace string, name string, id k
 		return fmt.Errorf("Error building CNI config: %v", err)
 	}
 
+	glog.V(3).Infof("Calling cni plugins to add container to network with cni runtime: %+v", rt)
 	res, err := plugin.cniConfig.AddNetwork(plugin.netConfig, rt)
 	if err != nil {
 		return fmt.Errorf("Error adding container to network: %v", err)
@@ -252,6 +276,7 @@ func (plugin *kubenetNetworkPlugin) TearDownPod(namespace string, name string, i
 	}
 	delete(plugin.podCIDRs, id)
 
+	glog.V(3).Infof("Calling cni plugins to remove container from network with cni runtime: %+v", rt)
 	if err := plugin.cniConfig.DelNetwork(plugin.netConfig, rt); err != nil {
 		return fmt.Errorf("Error removing container from network: %v", err)
 	}

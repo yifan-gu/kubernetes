@@ -14,53 +14,73 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# loadedImageFlags is a bit-flag to track which docker images loaded successfully.
-let loadedImageFlags=0
+function convert-rkt-image() {
+	(cd /tmp; /opt/rkt/docker2aci $1)
+}
 
-while true; do
-  restart_docker=false
+function load-rkt-images() {
+	# a bit of a hack as rkt doesn't support loading docker images today
+	convert-rkt-image /srv/salt/kube-bins/kube-apiserver.tar
+	convert-rkt-image /srv/salt/kube-bins/kube-scheduler.tar
+	convert-rkt-image /srv/salt/kube-bins/kube-controller-manager.tar
 
-  if which docker 1>/dev/null 2>&1; then
+	/opt/rkt/rkt fetch /tmp/*.aci --insecure-options=image
+}
 
-    timeout 30 docker load -i /srv/salt/kube-bins/kube-apiserver.tar 1>/dev/null 2>&1
-    rc=$?
-    if [[ $rc == 0 ]]; then
-      let loadedImageFlags="$loadedImageFlags|1"
-    elif [[ $rc == 124 ]]; then
-      restart_docker=true
+function load-docker-images() {
+  # loadedImageFlags is a bit-flag to track which docker images loaded successfully.
+  let loadedImageFlags=0
+
+  while true; do
+    restart_docker=false
+
+    if which docker 1>/dev/null 2>&1; then
+
+      timeout 30 docker load -i /srv/salt/kube-bins/kube-apiserver.tar 1>/dev/null 2>&1
+      rc=$?
+      if [[ $rc == 0 ]]; then
+        let loadedImageFlags="$loadedImageFlags|1"
+      elif [[ $rc == 124 ]]; then
+        restart_docker=true
+      fi
+
+      timeout 30 docker load -i /srv/salt/kube-bins/kube-scheduler.tar 1>/dev/null 2>&1
+      rc=$?
+      if [[ $rc == 0 ]]; then
+        let loadedImageFlags="$loadedImageFlags|2"
+      elif [[ $rc == 124 ]]; then
+        restart_docker=true
+      fi
+
+      timeout 30 docker load -i /srv/salt/kube-bins/kube-controller-manager.tar 1>/dev/null 2>&1
+      rc=$?
+      if [[ $rc == 0 ]]; then
+        let loadedImageFlags="$loadedImageFlags|4"
+      elif [[ $rc == 124 ]]; then
+        restart_docker=true
+     fi
+    fi 
+
+    # required docker images got installed. exit while loop.
+    if [[ $loadedImageFlags == 7 ]]; then break; fi
+
+    # Sometimes docker load hang, restart docker daemon resolve the issue
+    if [[ $restart_docker ]]; then
+      if ! service docker restart; then # Try systemctl if there's no service command.
+        systemctl restart docker      
+      fi
     fi
 
-    timeout 30 docker load -i /srv/salt/kube-bins/kube-scheduler.tar 1>/dev/null 2>&1
-    rc=$?
-    if [[ $rc == 0 ]]; then
-      let loadedImageFlags="$loadedImageFlags|2"
-    elif [[ $rc == 124 ]]; then
-      restart_docker=true
-    fi
+    # sleep for 15 seconds before attempting to load docker images again
+    sleep 15
 
-    timeout 30 docker load -i /srv/salt/kube-bins/kube-controller-manager.tar 1>/dev/null 2>&1
-    rc=$?
-    if [[ $rc == 0 ]]; then
-      let loadedImageFlags="$loadedImageFlags|4"
-    elif [[ $rc == 124 ]]; then
-      restart_docker=true
-    fi
-  fi
-
-  # required docker images got installed. exit while loop.
-  if [[ $loadedImageFlags == 7 ]]; then break; fi
-
-  # Sometimes docker load hang, restart docker daemon resolve the issue
-  if [[ $restart_docker ]]; then
-    if ! service docker restart; then # Try systemctl if there's no service command.
-      systemctl restart docker      
-    fi
-  fi
-
-  # sleep for 15 seconds before attempting to load docker images again
-  sleep 15
-
-done
-
+  done
 # Now exit. After kube-push, salt will notice that the service is down and it
 # will start it and new docker images will be loaded.
+}
+
+if [[ "${KUBERNETES_CONTAINER_RUNTIME}" == "rkt" ]]; then
+	load-rkt-images
+else
+	load-docker-images
+fi

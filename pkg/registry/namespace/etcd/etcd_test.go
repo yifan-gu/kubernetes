@@ -31,7 +31,7 @@ import (
 
 func newStorage(t *testing.T) (*REST, *etcdtesting.EtcdTestServer) {
 	etcdStorage, server := registrytest.NewEtcdStorage(t, "")
-	restOptions := generic.RESTOptions{etcdStorage, generic.UndecoratedStorage, 1}
+	restOptions := generic.RESTOptions{Storage: etcdStorage, Decorator: generic.UndecoratedStorage, DeleteCollectionWorkers: 1}
 	namespaceStorage, _, _ := NewREST(restOptions)
 	return namespaceStorage, server
 }
@@ -147,7 +147,7 @@ func TestDeleteNamespaceWithIncompleteFinalizers(t *testing.T) {
 		},
 		Status: api.NamespaceStatus{Phase: api.NamespaceActive},
 	}
-	if err := storage.Storage.Set(ctx, key, namespace, nil, 0); err != nil {
+	if err := storage.Storage.Create(ctx, key, namespace, nil, 0); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if _, err := storage.Delete(ctx, "foo", nil); err == nil {
@@ -171,7 +171,7 @@ func TestDeleteNamespaceWithCompleteFinalizers(t *testing.T) {
 		},
 		Status: api.NamespaceStatus{Phase: api.NamespaceActive},
 	}
-	if err := storage.Storage.Set(ctx, key, namespace, nil, 0); err != nil {
+	if err := storage.Storage.Create(ctx, key, namespace, nil, 0); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if _, err := storage.Delete(ctx, "foo", nil); err != nil {

@@ -90,12 +90,12 @@
     triggers:
         - pollscm:
             cron: 'H/5 * * * *'
-        - timed: '@daily'
+        - timed: 'H/30 * * * *'
     wrappers:
         - ansicolor:
             colormap: xterm
         - timeout:
-            timeout: 30
+            timeout: 45
             fail: true
         - timestamps
         - inject:
@@ -113,7 +113,7 @@
             repoName: 'google/cadvisor'
             gitbasedir: 'github.com/google/cadvisor'
             dockerfilePath: 'deploy/canary/Dockerfile'
-            owner: 'vishnuk@google.com'
+            owner: 'stclair@google.com'
         - 'heapster':
             repoName: 'kubernetes/heapster'
             gitbasedir: 'k8s.io/heapster'
@@ -131,7 +131,7 @@
         - 'cadvisor':
             repoName: 'google/cadvisor'
             gitbasedir: 'github.com/google/cadvisor'
-            owner: 'vishnuk@google.com'
+            owner: 'stclair@google.com'
             shell: |
                 go get -u github.com/tools/godep
 

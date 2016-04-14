@@ -31,6 +31,8 @@ import (
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/resource"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
+	"k8s.io/kubernetes/pkg/kubelet/lifecycle"
+	"k8s.io/kubernetes/pkg/util/errors"
 	utiltesting "k8s.io/kubernetes/pkg/util/testing"
 )
 
@@ -713,7 +715,7 @@ func TestGetPodStatus(t *testing.T) {
 func generateCapRetainIsolator(t *testing.T, caps ...string) appctypes.Isolator {
 	retain, err := appctypes.NewLinuxCapabilitiesRetainSet(caps...)
 	if err != nil {
-		t.Fatalf("Error generating cap retain isolator", err)
+		t.Fatalf("Error generating cap retain isolator: %v", err)
 	}
 	return retain.AsIsolator()
 }
@@ -721,7 +723,7 @@ func generateCapRetainIsolator(t *testing.T, caps ...string) appctypes.Isolator 
 func generateCapRevokeIsolator(t *testing.T, caps ...string) appctypes.Isolator {
 	revoke, err := appctypes.NewLinuxCapabilitiesRevokeSet(caps...)
 	if err != nil {
-		t.Fatalf("Error generating cap revoke isolator", err)
+		t.Fatalf("Error generating cap revoke isolator: %v", err)
 	}
 	return revoke.AsIsolator()
 }
@@ -729,7 +731,7 @@ func generateCapRevokeIsolator(t *testing.T, caps ...string) appctypes.Isolator 
 func generateCPUIsolator(t *testing.T, request, limit string) appctypes.Isolator {
 	cpu, err := appctypes.NewResourceCPUIsolator(request, limit)
 	if err != nil {
-		t.Fatalf("Error generating cpu resource isolator", err)
+		t.Fatalf("Error generating cpu resource isolator: %v", err)
 	}
 	return cpu.AsIsolator()
 }
@@ -737,7 +739,7 @@ func generateCPUIsolator(t *testing.T, request, limit string) appctypes.Isolator
 func generateMemoryIsolator(t *testing.T, request, limit string) appctypes.Isolator {
 	memory, err := appctypes.NewResourceMemoryIsolator(request, limit)
 	if err != nil {
-		t.Fatalf("Error generating memory resource isolator", err)
+		t.Fatalf("Error generating memory resource isolator: %v", err)
 	}
 	return memory.AsIsolator()
 }
@@ -816,6 +818,12 @@ func sortAppFields(app *appctypes.App) {
 	sort.Sort(portsByName(app.Ports))
 	sort.Sort(isolatorsByName(app.Isolators))
 }
+
+type sortedStringList []string
+
+func (s sortedStringList) Len() int           { return len(s) }
+func (s sortedStringList) Less(i, j int) bool { return s[i] < s[j] }
+func (s sortedStringList) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
 
 func TestSetApp(t *testing.T) {
 	tmpDir, err := utiltesting.MkTmpdir("rkt_test")
@@ -1037,6 +1045,7 @@ func TestGenerateRunCommand(t *testing.T) {
 
 		dnsServers  []string
 		dnsSearches []string
+		hostName    string
 		err         error
 
 		expect string
@@ -1044,26 +1053,38 @@ func TestGenerateRunCommand(t *testing.T) {
 		// Case #0, returns error.
 		{
 			&api.Pod{
+				ObjectMeta: api.ObjectMeta{
+					Name: "pod-name-foo",
+				},
 				Spec: api.PodSpec{},
 			},
 			"rkt-uuid-foo",
 			[]string{},
 			[]string{},
+			"",
 			fmt.Errorf("failed to get cluster dns"),
 			"",
 		},
 		// Case #1, returns no dns, with private-net.
 		{
-			&api.Pod{},
+			&api.Pod{
+				ObjectMeta: api.ObjectMeta{
+					Name: "pod-name-foo",
+				},
+			},
 			"rkt-uuid-foo",
 			[]string{},
 			[]string{},
+			"pod-hostname-foo",
 			nil,
-			"/bin/rkt/rkt --debug=false --insecure-options=image,ondisk --local-config=/var/rkt/local/data --dir=/var/data run-prepared --net=rkt.kubernetes.io rkt-uuid-foo",
+			"/bin/rkt/rkt --insecure-options=image,ondisk --local-config=/var/rkt/local/data --dir=/var/data run-prepared --net=rkt.kubernetes.io --hostname=pod-hostname-foo rkt-uuid-foo",
 		},
 		// Case #2, returns no dns, with host-net.
 		{
 			&api.Pod{
+				ObjectMeta: api.ObjectMeta{
+					Name: "pod-name-foo",
+				},
 				Spec: api.PodSpec{
 					SecurityContext: &api.PodSecurityContext{
 						HostNetwork: true,
@@ -1073,12 +1094,16 @@ func TestGenerateRunCommand(t *testing.T) {
 			"rkt-uuid-foo",
 			[]string{},
 			[]string{},
+			"pod-hostname-foo",
 			nil,
-			"/bin/rkt/rkt --debug=false --insecure-options=image,ondisk --local-config=/var/rkt/local/data --dir=/var/data run-prepared --net=host rkt-uuid-foo",
+			"/bin/rkt/rkt --insecure-options=image,ondisk --local-config=/var/rkt/local/data --dir=/var/data run-prepared --net=host --hostname=pod-hostname-foo rkt-uuid-foo",
 		},
 		// Case #3, returns dns, dns searches, with private-net.
 		{
 			&api.Pod{
+				ObjectMeta: api.ObjectMeta{
+					Name: "pod-name-foo",
+				},
 				Spec: api.PodSpec{
 					SecurityContext: &api.PodSecurityContext{
 						HostNetwork: false,
@@ -1088,12 +1113,16 @@ func TestGenerateRunCommand(t *testing.T) {
 			"rkt-uuid-foo",
 			[]string{"127.0.0.1"},
 			[]string{"."},
+			"pod-hostname-foo",
 			nil,
-			"/bin/rkt/rkt --debug=false --insecure-options=image,ondisk --local-config=/var/rkt/local/data --dir=/var/data run-prepared --net=rkt.kubernetes.io --dns=127.0.0.1 --dns-search=. --dns-opt=ndots:5 rkt-uuid-foo",
+			"/bin/rkt/rkt --insecure-options=image,ondisk --local-config=/var/rkt/local/data --dir=/var/data run-prepared --net=rkt.kubernetes.io --dns=127.0.0.1 --dns-search=. --dns-opt=ndots:5 --hostname=pod-hostname-foo rkt-uuid-foo",
 		},
 		// Case #4, returns dns, dns searches, with host-network.
 		{
 			&api.Pod{
+				ObjectMeta: api.ObjectMeta{
+					Name: "pod-name-foo",
+				},
 				Spec: api.PodSpec{
 					SecurityContext: &api.PodSecurityContext{
 						HostNetwork: true,
@@ -1103,13 +1132,13 @@ func TestGenerateRunCommand(t *testing.T) {
 			"rkt-uuid-foo",
 			[]string{"127.0.0.1"},
 			[]string{"."},
+			"pod-hostname-foo",
 			nil,
-			"/bin/rkt/rkt --debug=false --insecure-options=image,ondisk --local-config=/var/rkt/local/data --dir=/var/data run-prepared --net=host --dns=127.0.0.1 --dns-search=. --dns-opt=ndots:5 rkt-uuid-foo",
+			"/bin/rkt/rkt --insecure-options=image,ondisk --local-config=/var/rkt/local/data --dir=/var/data run-prepared --net=host --dns=127.0.0.1 --dns-search=. --dns-opt=ndots:5 --hostname=pod-hostname-foo rkt-uuid-foo",
 		},
 	}
 
 	rkt := &Runtime{
-		rktBinAbsPath: "/bin/rkt/rkt",
 		config: &Config{
 			Path:            "/bin/rkt/rkt",
 			Stage1Image:     "/bin/rkt/stage1-coreos.aci",
@@ -1121,10 +1150,136 @@ func TestGenerateRunCommand(t *testing.T) {
 
 	for i, tt := range tests {
 		testCaseHint := fmt.Sprintf("test case #%d", i)
-		rkt.runtimeHelper = &fakeRuntimeHelper{tt.dnsServers, tt.dnsSearches, tt.err}
+		rkt.runtimeHelper = &fakeRuntimeHelper{tt.dnsServers, tt.dnsSearches, tt.hostName, "", tt.err}
 
 		result, err := rkt.generateRunCommand(tt.pod, tt.uuid)
 		assert.Equal(t, tt.err, err, testCaseHint)
 		assert.Equal(t, tt.expect, result, testCaseHint)
+	}
+}
+
+func TestPreStopHooks(t *testing.T) {
+	runner := lifecycle.NewFakeHandlerRunner()
+	fr := newFakeRktInterface()
+	fs := newFakeSystemd()
+
+	rkt := &Runtime{
+		runner:              runner,
+		apisvc:              fr,
+		systemd:             fs,
+		containerRefManager: kubecontainer.NewRefManager(),
+	}
+
+	tests := []struct {
+		pod         *api.Pod
+		runtimePod  *kubecontainer.Pod
+		preStopRuns []string
+		err         error
+	}{
+		{
+			// Case 0, container without any hooks.
+			&api.Pod{
+				ObjectMeta: api.ObjectMeta{
+					Name:      "pod-1",
+					Namespace: "ns-1",
+					UID:       "uid-1",
+				},
+				Spec: api.PodSpec{
+					Containers: []api.Container{
+						{Name: "container-name-1"},
+					},
+				},
+			},
+			&kubecontainer.Pod{
+				Containers: []*kubecontainer.Container{
+					{ID: kubecontainer.BuildContainerID("rkt", "id-1")},
+				},
+			},
+			[]string{},
+			nil,
+		},
+		{
+			// Case 1, containers with pre-stop hook.
+			&api.Pod{
+				ObjectMeta: api.ObjectMeta{
+					Name:      "pod-1",
+					Namespace: "ns-1",
+					UID:       "uid-1",
+				},
+				Spec: api.PodSpec{
+					Containers: []api.Container{
+						{
+							Name: "container-name-1",
+							Lifecycle: &api.Lifecycle{
+								PreStop: &api.Handler{
+									Exec: &api.ExecAction{},
+								},
+							},
+						},
+						{
+							Name: "container-name-2",
+							Lifecycle: &api.Lifecycle{
+								PreStop: &api.Handler{
+									HTTPGet: &api.HTTPGetAction{},
+								},
+							},
+						},
+					},
+				},
+			},
+			&kubecontainer.Pod{
+				Containers: []*kubecontainer.Container{
+					{ID: kubecontainer.BuildContainerID("rkt", "id-1")},
+					{ID: kubecontainer.BuildContainerID("rkt", "id-2")},
+				},
+			},
+			[]string{
+				"exec on pod: pod-1_ns-1(uid-1), container: container-name-1: rkt://id-1",
+				"http-get on pod: pod-1_ns-1(uid-1), container: container-name-2: rkt://id-2",
+			},
+			nil,
+		},
+		{
+			// Case 2, one container with invalid hooks.
+			&api.Pod{
+				ObjectMeta: api.ObjectMeta{
+					Name:      "pod-1",
+					Namespace: "ns-1",
+					UID:       "uid-1",
+				},
+				Spec: api.PodSpec{
+					Containers: []api.Container{
+						{
+							Name: "container-name-1",
+							Lifecycle: &api.Lifecycle{
+								PreStop: &api.Handler{},
+							},
+						},
+					},
+				},
+			},
+			&kubecontainer.Pod{
+				Containers: []*kubecontainer.Container{
+					{ID: kubecontainer.BuildContainerID("rkt", "id-1")},
+				},
+			},
+			[]string{},
+			errors.NewAggregate([]error{fmt.Errorf("Invalid handler: %v", &api.Handler{})}),
+		},
+	}
+
+	for i, tt := range tests {
+		testCaseHint := fmt.Sprintf("test case #%d", i)
+
+		// Run pre-stop hooks.
+		err := rkt.runPreStopHook(tt.pod, tt.runtimePod)
+		assert.Equal(t, tt.err, err, testCaseHint)
+
+		sort.Sort(sortedStringList(tt.preStopRuns))
+		sort.Sort(sortedStringList(runner.HandlerRuns))
+
+		assert.Equal(t, tt.preStopRuns, runner.HandlerRuns, testCaseHint)
+
+		runner.Reset()
 	}
 }
