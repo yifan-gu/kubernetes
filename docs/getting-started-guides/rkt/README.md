@@ -61,7 +61,7 @@ export KUBE_ENABLE_NODE_LOGGING=false
 export KUBE_ENABLE_CLUSTER_MONITORING=none
 
 export KUBE_CONTAINER_RUNTIME=rkt
-export KUBE_RKT_VERSION=rkt-1.2.1-cgroup
+export KUBE_RKT_VERSION=rkt-1.3.0-lock-volume
 ```
 
 Also, we need to specify the instance/network prefix so that we won't step on each other's cluster:
