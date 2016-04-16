@@ -990,9 +990,13 @@ func (r *Runtime) RunPod(pod *api.Pod, pullSecrets []api.Secret) error {
 
 	// Run PostStopHooks.
 	if err := r.runPostStartHooks(pod, runtimePod); err != nil {
-		errKill := r.KillPod(pod, *runtimePod)
-		return errors.NewAggregate([]error{err, errKill})
+		if errKill := r.KillPod(pod, *runtimePod); errKill != nil {
+			return errors.NewAggregate([]error{err, errKill})
+		}
+		return err
 	}
+
+	glog.V(4).Infof("rkt: post-start hooks for pod %v completed", format.Pod(pod))
 
 	return nil
 }
@@ -1053,6 +1057,7 @@ func (r *Runtime) runPreStopHooks(pod *api.Pod, runtimePod *kubecontainer.Pod) e
 }
 
 func (r *Runtime) runPostStartHooks(pod *api.Pod, runtimePod *kubecontainer.Pod) error {
+	time.Sleep(time.Second)
 	return r.runLifecycleHooks(pod, runtimePod, "post-start")
 }
 
