@@ -987,10 +987,19 @@ func (r *Runtime) RunPod(pod *api.Pod, pullSecrets []api.Secret) error {
 	}
 
 	r.generateEvents(runtimePod, "Started", nil)
+
+	// Run PostStopHooks.
+	if err := r.runPostStartHooks(pod, runtimePod); err != nil {
+		errKill := r.KillPod(pod, *runtimePod)
+		return errors.NewAggregate([]error{err, errKill})
+	}
+
 	return nil
 }
 
-func (r *Runtime) runPreStopHook(pod *api.Pod, runtimePod *kubecontainer.Pod) error {
+func (r *Runtime) runLifecycleHooks(pod *api.Pod, runtimePod *kubecontainer.Pod, typ string) error {
+	glog.V(4).Infof("rkt: Running lifecycle hook %q for pod %q", typ, format.Pod(pod))
+
 	var wg sync.WaitGroup
 	var errlist []error
 	errCh := make(chan error, len(pod.Spec.Containers))
@@ -998,18 +1007,32 @@ func (r *Runtime) runPreStopHook(pod *api.Pod, runtimePod *kubecontainer.Pod) er
 	wg.Add(len(pod.Spec.Containers))
 
 	for i, c := range pod.Spec.Containers {
-		if c.Lifecycle == nil || c.Lifecycle.PreStop == nil {
+		if c.Lifecycle == nil {
 			wg.Done()
 			continue
 		}
 
-		hook := c.Lifecycle.PreStop
+		var hook *api.Handler
+		switch typ {
+		case "post-start":
+			hook = c.Lifecycle.PostStart
+		case "pre-stop":
+			hook = c.Lifecycle.PreStop
+		default:
+			return fmt.Errorf("unrecognized hook type: %q", typ)
+		}
+
+		if hook == nil {
+			wg.Done()
+			continue
+		}
+
 		containerID := runtimePod.Containers[i].ID
 		container := &pod.Spec.Containers[i]
 
 		go func() {
 			if err := r.runner.Run(containerID, pod, container, hook); err != nil {
-				glog.Errorf("rkt: Failed to run pre-stop hook for container %q of pod %q: %v", container.Name, format.Pod(pod), err)
+				glog.Errorf("rkt: Failed to run %s hook for container %q of pod %q: %v", typ, container.Name, format.Pod(pod), err)
 				errCh <- err
 			}
 			wg.Done()
@@ -1023,6 +1046,14 @@ func (r *Runtime) runPreStopHook(pod *api.Pod, runtimePod *kubecontainer.Pod) er
 		errlist = append(errlist, err)
 	}
 	return errors.NewAggregate(errlist)
+}
+
+func (r *Runtime) runPreStopHooks(pod *api.Pod, runtimePod *kubecontainer.Pod) error {
+	return r.runLifecycleHooks(pod, runtimePod, "pre-stop")
+}
+
+func (r *Runtime) runPostStartHooks(pod *api.Pod, runtimePod *kubecontainer.Pod) error {
+	return r.runLifecycleHooks(pod, runtimePod, "post-start")
 }
 
 // convertRktPod will convert a rktapi.Pod to a kubecontainer.Pod
@@ -1154,7 +1185,7 @@ func (r *Runtime) waitPreStopHooks(pod *api.Pod, runningPod *kubecontainer.Pod) 
 
 	errCh := make(chan error, 1)
 	go func() {
-		if err := r.runPreStopHook(pod, runningPod); err != nil {
+		if err := r.runPreStopHooks(pod, runningPod); err != nil {
 			errCh <- err
 		}
 		close(errCh)
