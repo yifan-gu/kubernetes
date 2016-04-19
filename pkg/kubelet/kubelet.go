@@ -149,6 +149,7 @@ type SyncHandler interface {
 	HandlePodReconcile(pods []*api.Pod)
 	HandlePodSyncs(pods []*api.Pod)
 	HandlePodCleanups() error
+	HandlePodEvents(events []*pleg.PodLifecycleEvent)
 }
 
 type SourcesReadyFn func(sourcesSeen sets.String) bool
@@ -476,7 +477,7 @@ func NewMainKubelet(
 	klet.runtimeCache = runtimeCache
 	klet.reasonCache = NewReasonCache()
 	klet.workQueue = queue.NewBasicWorkQueue()
-	klet.podWorkers = newPodWorkers(klet.syncPod, recorder, klet.workQueue, klet.resyncInterval, backOffPeriod, klet.podCache)
+	klet.podWorkers = newPodWorkers(klet.syncPod, klet.handleEvent, recorder, klet.workQueue, klet.resyncInterval, backOffPeriod, klet.podCache)
 
 	klet.backOff = flowcontrol.NewBackOff(backOffPeriod, MaxContainerBackOff)
 	klet.podKillingCh = make(chan *kubecontainer.PodPair, podKillingChannelCapacity)
@@ -1822,6 +1823,48 @@ func (kl *Kubelet) syncPod(pod *api.Pod, mirrorPod *api.Pod, podStatus *kubecont
 	return nil
 }
 
+func (kl *Kubelet) handleEvent(event *pleg.PodLifecycleEvent) error {
+	var handleFunc func(event *pleg.PodLifecycleEvent) error
+	switch event.Type {
+	case pleg.ContainerStarted:
+		handleFunc = kl.handleContainerStartedEvent
+	case pleg.ContainerDied:
+		handleFunc = kl.handleContainerDiedEvent
+	case pleg.ContainerRemoved:
+		handleFunc = kl.handleContainerRemovedEvent
+	case pleg.ContainerChanged:
+		handleFunc = kl.handleContainerChangedEvent
+	case pleg.PodSync:
+		handleFunc = kl.handlePodSyncEvent
+	}
+	return handleFunc(event)
+}
+
+func (kl *Kubelet) handleContainerStartedEvent(event *pleg.PodLifecycleEvent) error {
+	// TODO(yifan): Igorning event.
+	return nil
+}
+
+func (kl *Kubelet) handleContainerDiedEvent(event *pleg.PodLifecycleEvent) error {
+	// TODO(yifan): Igorning event.
+	return nil
+}
+
+func (kl *Kubelet) handleContainerRemovedEvent(event *pleg.PodLifecycleEvent) error {
+	// TODO(yifan): Igorning event.
+	return nil
+}
+
+func (kl *Kubelet) handleContainerChangedEvent(event *pleg.PodLifecycleEvent) error {
+	// TODO(yifan): Igorning event.
+	return nil
+}
+
+func (kl *Kubelet) handlePodSyncEvent(event *pleg.PodLifecycleEvent) error {
+	// TODO(yifan): Igorning event.
+	return nil
+}
+
 func podUsesHostNetwork(pod *api.Pod) bool {
 	return pod.Spec.SecurityContext != nil && pod.Spec.SecurityContext.HostNetwork
 }
@@ -2457,7 +2500,7 @@ func (kl *Kubelet) syncLoopIteration(updates <-chan kubetypes.PodUpdate, handler
 			// TODO (yujuhong): should we delay the sync until container
 			// runtime can be updated?
 		}
-		handler.HandlePodSyncs([]*api.Pod{pod})
+		handler.HandlePodEvents([]*pleg.PodLifecycleEvent{e})
 	case <-syncCh:
 		podsToSync := kl.getPodsToSync()
 		if len(podsToSync) == 0 {
@@ -2514,6 +2557,10 @@ func (kl *Kubelet) dispatchWork(pod *api.Pod, syncType kubetypes.SyncPodType, mi
 	if syncType == kubetypes.SyncPodCreate {
 		metrics.ContainersPerPodCount.Observe(float64(len(pod.Spec.Containers)))
 	}
+}
+
+func (kl *Kubelet) dispatchEvent(event *pleg.PodLifecycleEvent) {
+	kl.podWorkers.UpdateEvent(event)
 }
 
 // TODO: Consider handling all mirror pods updates in a separate component.
@@ -2597,6 +2644,12 @@ func (kl *Kubelet) HandlePodSyncs(pods []*api.Pod) {
 	for _, pod := range pods {
 		mirrorPod, _ := kl.podManager.GetMirrorPodByPod(pod)
 		kl.dispatchWork(pod, kubetypes.SyncPodSync, mirrorPod, start)
+	}
+}
+
+func (kl *Kubelet) HandlePodEvents(events []*pleg.PodLifecycleEvent) {
+	for _, e := range events {
+		kl.dispatchEvent(e)
 	}
 }
 
