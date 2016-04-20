@@ -1058,15 +1058,28 @@ func (r *Runtime) runPreStopHooks(pod *api.Pod, runtimePod *kubecontainer.Pod) e
 }
 
 func (r *Runtime) runPostStartHooks(pod *api.Pod, runtimePod *kubecontainer.Pod) error {
-	// Since pod might not come up immediately after the systemd service
-	// runs, we will sleep a while if necessary.
-
-	waitPodRunning := func(runtimePod *kubecontainer.Pod) {
-		runtimePod.Container
+	containerID, err := parseContainerID(runtimePod.Containers[0].ID)
+	if err != nil {
+		glog.Errorf("rkt: Failed to get rkt uuid of the pod: %q: %v", runtimePod.Name, err)
+		return err
 	}
-	for {
 
+	waitPodRunning := func() (done bool, err error) {
+		resp, err := r.apisvc.InspectPod(context.Background(), &rktapi.InspectPodRequest{Id: containerID.uuid})
+		if err != nil {
+			return false, fmt.Errorf("rkt: Failed to inspect rkt pod %q for pod %q", containerID.uuid, format.Pod(pod))
+		}
+		return resp.Pod.State == rktapi.PodState_POD_STATE_RUNNING, nil
 	}
+
+	// TODO(yifan): Polling the pod's state for now.
+	timeout := time.Second * 10
+	pollInterval := time.Millisecond * 500
+	if err := utilwait.Poll(pollInterval, timeout, waitPodRunning); err != nil {
+		glog.Errorf("rkt: Pod %q doesn't become running in %v", format.Pod(pod), timeout)
+		return err
+	}
+
 	return r.runLifecycleHooks(pod, runtimePod, "post-start")
 }
 
