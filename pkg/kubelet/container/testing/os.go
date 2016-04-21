@@ -18,11 +18,22 @@ package testing
 
 import (
 	"os"
+	"sync"
+	"time"
 )
 
 // FakeOS mocks out certain OS calls to avoid perturbing the filesystem
 // on the test machine.
-type FakeOS struct{}
+// TODO(yifan): Use go mock to replace this.
+type FakeOS struct {
+	HostName string
+	Removes  []string
+	sync.Mutex
+}
+
+func NewFakeOS() *FakeOS {
+	return &FakeOS{Removes: []string{}}
+}
 
 // Mkdir is a fake call that just returns nil.
 func (FakeOS) Mkdir(path string, perm os.FileMode) error {
@@ -32,4 +43,32 @@ func (FakeOS) Mkdir(path string, perm os.FileMode) error {
 // Symlink is a fake call that just returns nil.
 func (FakeOS) Symlink(oldname string, newname string) error {
 	return nil
+}
+
+// Remove is a fake call that returns nil.
+func (f *FakeOS) Remove(path string) error {
+	f.Lock()
+	defer f.Unlock()
+	f.Removes = append(f.Removes, path)
+	return nil
+}
+
+// Create is a fake call that returns nil.
+func (FakeOS) Create(path string) (*os.File, error) {
+	return nil, nil
+}
+
+// Hostname is a fake call that returns nil.
+func (f *FakeOS) Hostname() (name string, err error) {
+	return f.HostName, nil
+}
+
+// Chtimes is a fake call that returns nil.
+func (FakeOS) Chtimes(path string, atime time.Time, mtime time.Time) error {
+	return nil
+}
+
+// Pipe is a fake call that returns nil.
+func (FakeOS) Pipe() (r *os.File, w *os.File, err error) {
+	return nil, nil, nil
 }

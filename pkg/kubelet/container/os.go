@@ -18,6 +18,7 @@ package container
 
 import (
 	"os"
+	"time"
 )
 
 // OSInterface collects system level operations that need to be mocked out
@@ -25,6 +26,11 @@ import (
 type OSInterface interface {
 	Mkdir(path string, perm os.FileMode) error
 	Symlink(oldname string, newname string) error
+	Remove(path string) error
+	Create(path string) (*os.File, error)
+	Hostname() (name string, err error)
+	Chtimes(path string, atime time.Time, mtime time.Time) error
+	Pipe() (r *os.File, w *os.File, err error)
 }
 
 // RealOS is used to dispatch the real system level operaitons.
@@ -38,4 +44,30 @@ func (RealOS) Mkdir(path string, perm os.FileMode) error {
 // Symlink will call os.Symlink to create a symbolic link.
 func (RealOS) Symlink(oldname string, newname string) error {
 	return os.Symlink(oldname, newname)
+}
+
+// Remove will call os.Remove to remove the path.
+func (RealOS) Remove(path string) error {
+	return os.Remove(path)
+}
+
+// Create will call os.Create to create and return a file
+// at path.
+func (RealOS) Create(path string) (*os.File, error) {
+	return os.Create(path)
+}
+
+// Hostname will call os.Hostname to return the hostname.
+func (RealOS) Hostname() (name string, err error) {
+	return os.Hostname()
+}
+
+// Chtimes will call os.Chtimes to change the atime and mtime of the path
+func (RealOS) Chtimes(path string, atime time.Time, mtime time.Time) error {
+	return os.Chtimes(path, atime, mtime)
+}
+
+// Pipe will call os.Pipe to return a connected pair of pipe.
+func (RealOS) Pipe() (r *os.File, w *os.File, err error) {
+	return os.Pipe()
 }

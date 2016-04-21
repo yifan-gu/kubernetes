@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"os"
 	"os/exec"
 	"path"
 	"sort"
@@ -113,6 +112,8 @@ const (
 // uses systemd, so in order to run this runtime, systemd must be installed
 // on the machine.
 type Runtime struct {
+	os      kubecontainer.OSInterface
+	cli     cliInterface
 	systemd systemdInterface
 	// The grpc client for rkt api-service.
 	apisvcConn *grpc.ClientConn
@@ -191,6 +192,7 @@ func New(
 	}
 
 	rkt := &Runtime{
+		os:                  kubecontainer.RealOS{},
 		systemd:             systemd,
 		apisvcConn:          apisvcConn,
 		apisvc:              rktapi.NewPublicAPIClient(apisvcConn),
@@ -221,6 +223,8 @@ func New(
 		return nil, fmt.Errorf("rkt: error getting version info: %v", err)
 	}
 
+	rkt.cli = rkt
+
 	return rkt, nil
 }
 
@@ -239,9 +243,9 @@ func convertToACName(name string) appctypes.ACName {
 	return *appctypes.MustACName(acname)
 }
 
-// runCommand invokes rkt binary with arguments and returns the result
+// RunCommand invokes rkt binary with arguments and returns the result
 // from stdout in a list of strings. Each string in the list is a line.
-func (r *Runtime) runCommand(args ...string) ([]string, error) {
+func (r *Runtime) RunCommand(args ...string) ([]string, error) {
 	glog.V(4).Info("rkt: Run command:", args)
 
 	var stdout, stderr bytes.Buffer
@@ -602,7 +606,7 @@ func makeHostNetworkMount(opts *kubecontainer.RunContainerOptions) (*kubecontain
 	return &hostsMount, &resolvMount
 }
 
-func makeContainerLogMount(opts *kubecontainer.RunContainerOptions, container *api.Container) (*kubecontainer.Mount, error) {
+func (r *Runtime) makeContainerLogMount(opts *kubecontainer.RunContainerOptions, container *api.Container) (*kubecontainer.Mount, error) {
 	if opts.PodContainerDir == "" || container.TerminationMessagePath == "" {
 		return nil, nil
 	}
@@ -614,7 +618,7 @@ func makeContainerLogMount(opts *kubecontainer.RunContainerOptions, container *a
 	// on the disk.
 	randomUID := util.NewUUID()
 	containerLogPath := path.Join(opts.PodContainerDir, string(randomUID))
-	fs, err := os.Create(containerLogPath)
+	fs, err := r.os.Create(containerLogPath)
 	if err != nil {
 		return nil, err
 	}
@@ -666,7 +670,7 @@ func (r *Runtime) newAppcRuntimeApp(pod *api.Pod, c api.Container, pullSecrets [
 	}
 
 	// create the container log file and make a mount pair.
-	mnt, err := makeContainerLogMount(opts, &c)
+	mnt, err := r.makeContainerLogMount(opts, &c)
 	if err != nil {
 		return err
 	}
@@ -821,7 +825,7 @@ func (r *Runtime) generateRunCommand(pod *api.Pod, uuid string) (string, error) 
 		runPrepared = append(runPrepared, "--net=host")
 
 		// TODO(yifan): Let runtimeHelper.GeneratePodHostNameAndDomain() to handle this.
-		hostname, err = os.Hostname()
+		hostname, err = r.os.Hostname()
 		if err != nil {
 			return "", err
 		}
@@ -871,7 +875,7 @@ func (r *Runtime) preparePod(pod *api.Pod, pullSecrets []api.Secret) (string, *k
 	}
 	defer func() {
 		manifestFile.Close()
-		if err := os.Remove(manifestFile.Name()); err != nil {
+		if err := r.os.Remove(manifestFile.Name()); err != nil {
 			glog.Warningf("rkt: Cannot remove temp manifest file %q: %v", manifestFile.Name(), err)
 		}
 	}()
@@ -893,7 +897,7 @@ func (r *Runtime) preparePod(pod *api.Pod, pullSecrets []api.Secret) (string, *k
 	if r.config.Stage1Image != "" {
 		cmds = append(cmds, "--stage1-path", r.config.Stage1Image)
 	}
-	output, err := r.runCommand(cmds...)
+	output, err := r.cli.RunCommand(cmds...)
 	if err != nil {
 		return "", nil, err
 	}
@@ -920,7 +924,7 @@ func (r *Runtime) preparePod(pod *api.Pod, pullSecrets []api.Secret) (string, *k
 
 	serviceName := makePodServiceFileName(uuid)
 	glog.V(4).Infof("rkt: Creating service file %q for pod %q", serviceName, format.Pod(pod))
-	serviceFile, err := os.Create(serviceFilePath(serviceName))
+	serviceFile, err := r.os.Create(serviceFilePath(serviceName))
 	if err != nil {
 		return "", nil, err
 	}
@@ -1226,7 +1230,7 @@ func (r *Runtime) KillPod(pod *api.Pod, runningPod kubecontainer.Pod) error {
 
 	// Touch the systemd service file to update the mod time so it will
 	// not be garbage collected too soon.
-	if err := os.Chtimes(serviceFilePath(serviceName), time.Now(), time.Now()); err != nil {
+	if err := r.os.Chtimes(serviceFilePath(serviceName), time.Now(), time.Now()); err != nil {
 		glog.Errorf("rkt: Failed to change the modification time of the service file %q: %v", serviceName, err)
 		return err
 	}
@@ -1370,7 +1374,7 @@ func getPodUID(pod *rktapi.Pod) types.UID {
 func (r *Runtime) GarbageCollect(gcPolicy kubecontainer.ContainerGCPolicy) error {
 	glog.V(4).Infof("rkt: Garbage collecting triggered with policy %v", gcPolicy)
 
-	if err := exec.Command("systemctl", "reset-failed").Run(); err != nil {
+	if err := r.systemd.ResetFailed(); err != nil {
 		glog.Errorf("rkt: Failed to reset failed systemd services: %v, continue to gc anyway...", err)
 	}
 
@@ -1538,7 +1542,7 @@ func (r *Runtime) ExecInContainer(containerID kubecontainer.ContainerID, cmd []s
 		// This way, if you run 'kubectl exec <pod> -i bash' (no tty) and type 'exit',
 		// the call below to command.Run() can unblock because its Stdin is the read half
 		// of the pipe.
-		r, w, err := os.Pipe()
+		r, w, err := r.os.Pipe()
 		if err != nil {
 			return err
 		}
