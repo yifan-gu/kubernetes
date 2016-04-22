@@ -46,6 +46,9 @@ git remote add coreos https://github.com/coreos/kubernetes
 git checkout -b gce_coreos_rkt coreos/gce_coreos_rkt
 ```
 
+If you want to run rkt on master (experimental), check out the `gce_coreos_rkt_master` branch
+
+
 ### Setup environments
 
 In order to build/run the cluster with rkt container runtime. We need to specify some environments below:
@@ -89,6 +92,16 @@ CONTAINER_RUNTIME=rkt RKT_PATH=$PATH_TO_RKT_BINARY NET_PLUGIN=kubenet hack/local
 Launch a GCE cluster:
 ```
 cluster/kube-up.sh
+```
+
+Watch all pods:
+```
+kubectl get pods --all-namespaces
+```
+
+If you are running rkt on master, it will take longer time to see all the pods running.
+```
+sudo systemctl stop kubernetes-addons
 ```
 
 For more information on how to debug rkt cluster, please see https://github.com/kubernetes/kubernetes/tree/master/docs/getting-started-guides/rkt#getting-started-with-your-cluster
