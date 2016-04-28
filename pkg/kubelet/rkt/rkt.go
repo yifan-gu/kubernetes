@@ -17,6 +17,7 @@ limitations under the License.
 package rkt
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -831,6 +832,19 @@ func (r *Runtime) generateRunCommand(pod *api.Pod, uuid string) (string, error) 
 
 	var hostname string
 	var err error
+
+	osInfos, err := getOSReleaseInfo()
+	if err != nil {
+		glog.Errorf("rkt: Failed to read the os release info: %v", err)
+	}
+
+	// Overlay fs is not supported for SELinux yet on many distros.
+	// See https://github.com/coreos/rkt/issues/1727#issuecomment-173203129.
+	// For now, coreos carries a patch to support it: https://github.com/coreos/coreos-overlay/pull/1703
+	if pod.Spec.SecurityContext != nil && pod.Spec.SecurityContext.SELinuxOptions != nil && osInfos["ID"] != "coreos" {
+		runPrepared = append(runPrepared, "--no-overlay=true")
+	}
+
 	// Setup network configuration.
 	if kubecontainer.IsHostNetworkPod(pod) {
 		runPrepared = append(runPrepared, "--net=host")
@@ -936,6 +950,12 @@ func (r *Runtime) preparePod(pod *api.Pod, pullSecrets []api.Secret) (string, *k
 		newUnitOption("Service", "ExecStopPost", markPodFinished),
 		// This enables graceful stop.
 		newUnitOption("Service", "KillMode", "mixed"),
+	}
+
+	if pod.Spec.SecurityContext != nil && pod.Spec.SecurityContext.SELinuxOptions != nil {
+		opt := pod.Spec.SecurityContext.SELinuxOptions
+		selinuxContext := fmt.Sprintf("%s:%s:%s:%s", opt.User, opt.Role, opt.Type, opt.Level)
+		units = append(units, newUnitOption("Service", "SELinuxContext", selinuxContext))
 	}
 
 	serviceName := makePodServiceFileName(uuid)
@@ -1779,4 +1799,31 @@ func (r *Runtime) ImageStats() (*kubecontainer.ImageStats, error) {
 // GetConfig returns the config for the rkt runtime.
 func (r *Runtime) GetConfig() *Config {
 	return r.config
+}
+
+// getOSReleaseInfo reads /etc/os-release and returns a map
+// that contains the key value pairs in that file.
+func getOSReleaseInfo() (map[string]string, error) {
+	result := make(map[string]string)
+
+	path := "/etc/os-release"
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		info := strings.SplitN(line, "=", 2)
+		if len(info) != 2 {
+			return nil, err
+		}
+		result[info[0]] = info[1]
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
