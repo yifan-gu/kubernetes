@@ -749,10 +749,12 @@ func (r *Runtime) newAppcRuntimeApp(pod *api.Pod, c api.Container, pullSecrets [
 
 	// Set global ports.
 	for _, port := range opts.PortMappings {
-		manifest.Ports = append(manifest.Ports, appctypes.ExposedPort{
-			Name:     convertToACName(port.Name),
-			HostPort: uint(port.HostPort),
-		})
+		if port.HostPort != 0 {
+			manifest.Ports = append(manifest.Ports, appctypes.ExposedPort{
+				Name:     convertToACName(port.Name),
+				HostPort: uint(port.HostPort),
+			})
+		}
 	}
 
 	return nil
