@@ -918,6 +918,7 @@ func (r *Runtime) preparePod(pod *api.Pod, pullSecrets []api.Secret) (string, *k
 	// TODO handle pod.Spec.HostIPC
 
 	units := []*unit.UnitOption{
+		newUnitOption("Service", "Slice", "rkt.slice"),
 		newUnitOption("Service", "ExecStart", runPrepared),
 		// This enables graceful stop.
 		newUnitOption("Service", "KillMode", "mixed"),
