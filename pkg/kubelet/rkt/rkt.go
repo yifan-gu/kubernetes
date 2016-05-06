@@ -95,7 +95,6 @@ const (
 	dockerAuthTemplate = `{"rktKind":"dockerAuth","rktVersion":"v1","registries":[%q],"credentials":{"user":%q,"password":%q}}`
 
 	defaultRktAPIServiceAddr = "localhost:15441"
-	defaultNetworkName       = "rkt.kubernetes.io"
 
 	// ndots specifies the minimum number of dots that a domain name must contain for the resolver to consider it as FQDN (fully-qualified)
 	// we want to able to consider SRV lookup names like _dns._udp.kube-dns.default.svc to be considered relative.
@@ -563,7 +562,7 @@ func setApp(imgManifest *appcschema.ImageManifest, c *api.Container, opts *kubec
 }
 
 // makePodManifest transforms a kubelet pod spec to the rkt pod manifest.
-func (r *Runtime) makePodManifest(pod *api.Pod, pullSecrets []api.Secret) (*appcschema.PodManifest, error) {
+func (r *Runtime) makePodManifest(pod *api.Pod, podIP string, pullSecrets []api.Secret) (*appcschema.PodManifest, error) {
 	manifest := appcschema.BlankPodManifest()
 
 	listResp, err := r.apisvc.ListPods(context.Background(), &rktapi.ListPodsRequest{
@@ -602,7 +601,7 @@ func (r *Runtime) makePodManifest(pod *api.Pod, pullSecrets []api.Secret) (*appc
 	manifest.Annotations.Set(*appctypes.MustACIdentifier(k8sRktRestartCountAnno), strconv.Itoa(restartCount))
 
 	for _, c := range pod.Spec.Containers {
-		err := r.newAppcRuntimeApp(pod, c, pullSecrets, manifest)
+		err := r.newAppcRuntimeApp(pod, podIP, c, pullSecrets, manifest)
 		if err != nil {
 			return nil, err
 		}
@@ -707,7 +706,7 @@ func (r *Runtime) makeContainerLogMount(opts *kubecontainer.RunContainerOptions,
 	return &mnt, nil
 }
 
-func (r *Runtime) newAppcRuntimeApp(pod *api.Pod, c api.Container, pullSecrets []api.Secret, manifest *appcschema.PodManifest) error {
+func (r *Runtime) newAppcRuntimeApp(pod *api.Pod, podIP string, c api.Container, pullSecrets []api.Secret, manifest *appcschema.PodManifest) error {
 	if err, _ := r.imagePuller.PullImage(pod, &c, pullSecrets); err != nil {
 		return nil
 	}
@@ -730,7 +729,7 @@ func (r *Runtime) newAppcRuntimeApp(pod *api.Pod, c api.Container, pullSecrets [
 	}
 
 	// TODO: determine how this should be handled for rkt
-	opts, err := r.runtimeHelper.GenerateRunContainerOptions(pod, &c, "")
+	opts, err := r.runtimeHelper.GenerateRunContainerOptions(pod, &c, podIP)
 	if err != nil {
 		return err
 	}
@@ -957,9 +956,9 @@ func (r *Runtime) cleanupPodNetwork(pod *api.Pod) error {
 //
 // On success, it will return a string that represents name of the unit file
 // and the runtime pod.
-func (r *Runtime) preparePod(pod *api.Pod, pullSecrets []api.Secret, netnsName string) (string, *kubecontainer.Pod, error) {
+func (r *Runtime) preparePod(pod *api.Pod, podIP string, pullSecrets []api.Secret, netnsName string) (string, *kubecontainer.Pod, error) {
 	// Generate the pod manifest from the pod spec.
-	manifest, err := r.makePodManifest(pod, pullSecrets)
+	manifest, err := r.makePodManifest(pod, podIP, pullSecrets)
 	if err != nil {
 		return "", nil, err
 	}
@@ -1081,14 +1080,18 @@ func netnsPathFromName(netnsName string) string {
 	return fmt.Sprintf("/var/run/netns/%s", netnsName)
 }
 
-func (r *Runtime) setupPodNetwork(pod *api.Pod) (string, error) {
+// setupPodNetwork creates a network namespace for the given pod and calls
+// configured NetworkPlugin's setup function on it.
+// It returns the namespace name, configured IP (if available), and an error if
+// one occured.
+func (r *Runtime) setupPodNetwork(pod *api.Pod) (string, string, error) {
 	netnsName := makePodNetnsName(pod.UID)
 
 	// Create a new network namespace for the pod
 	r.execer.Command("ip", "netns", "del", netnsName).Output()
 	_, err := r.execer.Command("ip", "netns", "add", netnsName).Output()
 	if err != nil {
-		return "", fmt.Errorf("failed to create pod network namespace: %v", err)
+		return "", "", fmt.Errorf("failed to create pod network namespace: %v", err)
 	}
 
 	// Set up networking with the network plugin
@@ -1096,7 +1099,11 @@ func (r *Runtime) setupPodNetwork(pod *api.Pod) (string, error) {
 	containerID := kubecontainer.ContainerID{ID: string(pod.UID)}
 	err = r.networkPlugin.SetUpPod(pod.Namespace, pod.Name, containerID)
 	if err != nil {
-		return "", fmt.Errorf("failed to set up pod network: %v", err)
+		return "", "", fmt.Errorf("failed to set up pod network: %v", err)
+	}
+	status, err := r.networkPlugin.GetPodNetworkStatus(pod.Namespace, pod.Name, containerID)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get status of pod network: %v", err)
 	}
 
 	if r.configureHairpinMode {
@@ -1105,7 +1112,7 @@ func (r *Runtime) setupPodNetwork(pod *api.Pod) (string, error) {
 		}
 	}
 
-	return netnsName, nil
+	return netnsName, status.IP.String(), nil
 }
 
 // RunPod first creates the unit file for a pod, and then
@@ -1115,15 +1122,16 @@ func (r *Runtime) RunPod(pod *api.Pod, pullSecrets []api.Secret) error {
 
 	var err error
 	var netnsName string
+	var podIP string
 	if !kubecontainer.IsHostNetworkPod(pod) {
-		netnsName, err = r.setupPodNetwork(pod)
+		netnsName, podIP, err = r.setupPodNetwork(pod)
 		if err != nil {
 			r.cleanupPodNetwork(pod)
 			return err
 		}
 	}
 
-	name, runtimePod, prepareErr := r.preparePod(pod, pullSecrets, netnsName)
+	name, runtimePod, prepareErr := r.preparePod(pod, podIP, pullSecrets, netnsName)
 
 	// Set container references and generate events.
 	// If preparedPod fails, then send out 'failed' events for each container.
@@ -2025,7 +2033,6 @@ func (r *Runtime) GetPodStatus(uid types.UID, name, namespace string) (*kubecont
 		return nil, fmt.Errorf("couldn't list pods: %v", err)
 	}
 
-	var latestPod *rktapi.Pod
 	var latestRestartCount int = -1
 
 	// In this loop, we group all containers from all pods together,
@@ -2038,7 +2045,6 @@ func (r *Runtime) GetPodStatus(uid types.UID, name, namespace string) (*kubecont
 		}
 
 		if restartCount > latestRestartCount {
-			latestPod = pod
 			latestRestartCount = restartCount
 		}
 
@@ -2054,13 +2060,10 @@ func (r *Runtime) GetPodStatus(uid types.UID, name, namespace string) (*kubecont
 		}
 	}
 
-	if latestPod != nil {
-		// Try to fill the IP info.
-		for _, n := range latestPod.Networks {
-			if n.Name == defaultNetworkName {
-				podStatus.IP = n.Ipv4
-			}
-		}
+	// TODO(euank): this will not work in host networking mode
+	containerID := kubecontainer.ContainerID{ID: string(uid)}
+	if status, err := r.networkPlugin.GetPodNetworkStatus(namespace, name, containerID); err == nil {
+		podStatus.IP = status.IP.String()
 	}
 
 	return podStatus, nil
