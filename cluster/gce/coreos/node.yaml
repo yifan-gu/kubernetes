@@ -56,6 +56,18 @@ coreos:
         ExecStartPre=/usr/bin/curl --fail --silent --location --create-dirs --output /opt/downloads/rkt.tar.gz https://github.com/coreos/rkt/releases/download/v${RKT_VERSION}/rkt-v${RKT_VERSION}.tar.gz
         ExecStart=/usr/bin/tar --strip-components=1 -xf /opt/downloads/rkt.tar.gz -C /opt/rkt/ --overwrite
 
+    - name: rkt-api-service.service
+      command: start
+      content: |
+        [Unit]
+        Description=Start rkt API service as Daemon
+        Requires=kubernetes-install-rkt.service
+        After=kubernetes-install-rkt.service
+        [Service]
+        ExecStart=/opt/rkt/rkt api-service
+        Restart=always
+        RestartSec=10
+
     - name: kubernetes-download-manifests.service
       command: start
       content: |
@@ -94,18 +106,6 @@ coreos:
         /opt/kubernetes/pkg/kubernetes-server-linux-amd64.tar.gz ${SERVER_BINARY_TAR_URL}
         ExecStart=/usr/bin/tar xf /opt/kubernetes/pkg/kubernetes-server-linux-amd64.tar.gz -C /opt --overwrite
 
-    - name: rkt-api-service.service
-      command: start
-      content: |
-        [Unit]
-        Description=Start rkt API service as Daemon
-        Requires=kubernetes-install-rkt.service
-        After=kubernetes-install-rkt.service
-        [Service]
-        ExecStart=/opt/rkt/rkt api-service
-        Restart=always
-        RestartSec=10
-
     - name: kubelet.service
       command: start
       content: |
@@ -134,7 +134,8 @@ coreos:
         --container-runtime=${KUBERNETES_CONTAINER_RUNTIME} \
         --rkt-path=/opt/rkt/rkt \
         --rkt-stage1-image=/opt/rkt/stage1-coreos.aci \
-        --configure-cbr0=${KUBERNETES_CONFIGURE_CBR0}
+        --configure-cbr0=${KUBERNETES_CONFIGURE_CBR0} \
+        --network-plugin=kubenet
         Restart=always
         RestartSec=10
         KillMode=process
@@ -191,3 +192,30 @@ coreos:
         http://metadata.google.internal/computeMetadata/v1/instance/attributes/configure-node
         ExecStartPre=/usr/bin/chmod 0755 /run/configure-node.sh
         ExecStart=/run/configure-node.sh
+
+    - name: docker.service
+      command: stop
+      drop-ins:
+        - name: 50-docker-opts.conf
+          content: |
+            [Service]
+            Environment='DOCKER_OPTS=--bridge=cbr0 --iptables=false --ip-masq=false'
+            MountFlags=slave
+            LimitNOFILE=1048576
+            LimitNPROC=1048576
+            LimitCORE=infinity
+            Restart=always
+            RestartSec=2s
+            StartLimitInterval=0
+
+    - name: rkt-api-service.service
+      command: start
+      content: |
+        [Unit]
+        Description=Start rkt API service as Daemon
+        Requires=kubernetes-install-rkt.service
+        After=kubernetes-install-rkt.service
+        [Service]
+        ExecStart=/opt/rkt/rkt api-service
+        Restart=always
+        RestartSec=10

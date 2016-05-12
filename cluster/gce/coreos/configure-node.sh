@@ -330,9 +330,11 @@ if [[ "${KUBERNETES_MASTER}" == "true" ]]; then
   create-salt-master-auth
   load-master-components-images
   configure-master-components
+  cp ${SALT_DIR}/salt/kube-addons/kube-addon-manager.yaml /etc/kubernetes/manifests/kube-addon-manager.yaml
 else
   configure-kube-proxy
 fi
+
 
 if [[ "${ENABLE_NODE_LOGGING}" == "true" ]];then
   configure-logging
