@@ -504,44 +504,53 @@
 		},
 		{
 			"ImportPath": "github.com/coreos/go-systemd/activation",
-			"Comment": "v4",
-			"Rev": "b4a58d95188dd092ae20072bac14cece0e67c388"
+			"Comment": "v5-22-g4484981",
+			"Rev": "4484981625c1a6a2ecb40a390fcb6a9bcfee76e3"
 		},
 		{
 			"ImportPath": "github.com/coreos/go-systemd/daemon",
-			"Comment": "v4",
-			"Rev": "b4a58d95188dd092ae20072bac14cece0e67c388"
+			"Comment": "v5-22-g4484981",
+			"Rev": "4484981625c1a6a2ecb40a390fcb6a9bcfee76e3"
 		},
 		{
 			"ImportPath": "github.com/coreos/go-systemd/dbus",
-			"Comment": "v4",
-			"Rev": "b4a58d95188dd092ae20072bac14cece0e67c388"
+			"Comment": "v5-22-g4484981",
+			"Rev": "4484981625c1a6a2ecb40a390fcb6a9bcfee76e3"
+		},
+		{
+			"ImportPath": "github.com/coreos/go-systemd/journal",
+			"Comment": "v5-22-g4484981",
+			"Rev": "4484981625c1a6a2ecb40a390fcb6a9bcfee76e3"
 		},
 		{
 			"ImportPath": "github.com/coreos/go-systemd/unit",
-			"Comment": "v4",
-			"Rev": "b4a58d95188dd092ae20072bac14cece0e67c388"
+			"Comment": "v5-22-g4484981",
+			"Rev": "4484981625c1a6a2ecb40a390fcb6a9bcfee76e3"
 		},
 		{
 			"ImportPath": "github.com/coreos/go-systemd/util",
-			"Comment": "v4",
-			"Rev": "b4a58d95188dd092ae20072bac14cece0e67c388"
+			"Comment": "v5-22-g4484981",
+			"Rev": "4484981625c1a6a2ecb40a390fcb6a9bcfee76e3"
 		},
 		{
 			"ImportPath": "github.com/coreos/pkg/capnslog",
-			"Rev": "fa94270d4bac0d8ae5dc6b71894e251aada93f74"
+			"Rev": "7f080b6c11ac2d2347c3cd7521e810207ea1a041"
+		},
+		{
+			"ImportPath": "github.com/coreos/pkg/dlopen",
+			"Rev": "7f080b6c11ac2d2347c3cd7521e810207ea1a041"
 		},
 		{
 			"ImportPath": "github.com/coreos/pkg/health",
-			"Rev": "fa94270d4bac0d8ae5dc6b71894e251aada93f74"
+			"Rev": "7f080b6c11ac2d2347c3cd7521e810207ea1a041"
 		},
 		{
 			"ImportPath": "github.com/coreos/pkg/httputil",
-			"Rev": "fa94270d4bac0d8ae5dc6b71894e251aada93f74"
+			"Rev": "7f080b6c11ac2d2347c3cd7521e810207ea1a041"
 		},
 		{
 			"ImportPath": "github.com/coreos/pkg/timeutil",
-			"Rev": "fa94270d4bac0d8ae5dc6b71894e251aada93f74"
+			"Rev": "7f080b6c11ac2d2347c3cd7521e810207ea1a041"
 		},
 		{
 			"ImportPath": "github.com/coreos/rkt/api/v1alpha",
@@ -720,6 +729,11 @@
 		},
 		{
 			"ImportPath": "github.com/emicklei/go-restful",
+			"Comment": "v1.2-54-g7c47e25",
+			"Rev": "7c47e2558a0bbbaba9ecab06bc6681e73028a28a"
+		},
+		{
+			"ImportPath": "github.com/emicklei/go-restful/examples/msgpack",
 			"Comment": "v1.2-54-g7c47e25",
 			"Rev": "7c47e2558a0bbbaba9ecab06bc6681e73028a28a"
 		},
@@ -2076,6 +2090,16 @@
 			"ImportPath": "gopkg.in/natefinch/lumberjack.v2",
 			"Comment": "v1.0-16-g20b71e5",
 			"Rev": "20b71e5b60d756d3d2f80def009790325acc2b23"
+		},
+		{
+			"ImportPath": "gopkg.in/vmihailenco/msgpack.v2",
+			"Comment": "v2.5.3",
+			"Rev": "851cd631b60599a692b136c60eb6eb2899b0e664"
+		},
+		{
+			"ImportPath": "gopkg.in/vmihailenco/msgpack.v2/codes",
+			"Comment": "v2.5.3",
+			"Rev": "851cd631b60599a692b136c60eb6eb2899b0e664"
 		},
 		{
 			"ImportPath": "gopkg.in/yaml.v2",
