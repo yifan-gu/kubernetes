@@ -38,6 +38,7 @@ import (
 	"github.com/coreos/go-systemd/unit"
 	rktapi "github.com/coreos/rkt/api/v1alpha"
 	"github.com/golang/glog"
+	"github.com/opencontainers/runc/libcontainer/selinux"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"k8s.io/kubernetes/pkg/api"
@@ -991,6 +992,33 @@ func (r *Runtime) preparePodArgs(manifest *appcschema.PodManifest, manifestFileN
 	return cmds
 }
 
+func (r *Runtime) getSelinuxContext(opt *api.SELinuxOptions) (string, error) {
+	str, err := selinux.Getfilecon(r.config.Dir)
+	if err != nil {
+		return "", err
+	}
+
+	ctx := strings.SplitN(str, ":", 4)
+	if len(ctx) != 4 {
+		return "", fmt.Errorf("malformated selinux context")
+	}
+
+	if opt.User != "" {
+		ctx[0] = opt.User
+	}
+	if opt.Role != "" {
+		ctx[1] = opt.Role
+	}
+	if opt.Type != "" {
+		ctx[2] = opt.Type
+	}
+	if opt.Level != "" {
+		ctx[3] = opt.Level
+	}
+
+	return strings.Join(ctx, ":"), nil
+}
+
 // preparePod will:
 //
 // 1. Invoke 'rkt prepare' to prepare the pod, and get the rkt pod uuid.
@@ -1058,6 +1086,16 @@ func (r *Runtime) preparePod(pod *api.Pod, pullSecrets []api.Secret, netnsName s
 		newUnitOption(unitKubernetesSection, unitPodUID, string(pod.UID)),
 		newUnitOption(unitKubernetesSection, unitPodName, pod.Name),
 		newUnitOption(unitKubernetesSection, unitPodNamespace, pod.Namespace),
+	}
+
+	if pod.Spec.SecurityContext != nil && pod.Spec.SecurityContext.SELinuxOptions != nil {
+		opt := pod.Spec.SecurityContext.SELinuxOptions
+		selinuxContext, err := r.getSelinuxContext(opt)
+		if err != nil {
+			glog.Errorf("rkt: Failed to construct selinux context with selinux option %q: %v", opt, err)
+			return "", nil, err
+		}
+		units = append(units, newUnitOption("Service", "SELinuxContext", selinuxContext))
 	}
 
 	serviceName := makePodServiceFileName(uuid)
