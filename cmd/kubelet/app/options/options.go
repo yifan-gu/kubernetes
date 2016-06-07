@@ -19,6 +19,7 @@ package options
 
 import (
 	_ "net/http/pprof"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -39,6 +40,7 @@ const (
 	defaultRootDir             = "/var/lib/kubelet"
 	experimentalFlannelOverlay = false
 
+	// When these values are updated, also update test/e2e/framework/util.go
 	defaultPodInfraContainerImageName    = "gcr.io/google_containers/pause"
 	defaultPodInfraContainerImageVersion = "3.0"
 )
@@ -76,48 +78,49 @@ func NewKubeletServer() *KubeletServer {
 		SystemReserved: make(config.ConfigurationMap),
 		KubeReserved:   make(config.ConfigurationMap),
 		KubeletConfiguration: componentconfig.KubeletConfiguration{
-			Address:                     "0.0.0.0",
-			CAdvisorPort:                4194,
-			VolumeStatsAggPeriod:        unversioned.Duration{Duration: time.Minute},
-			CertDirectory:               "/var/run/kubernetes",
-			CgroupRoot:                  "",
-			ConfigureCBR0:               false,
-			ContainerRuntime:            "docker",
-			CPUCFSQuota:                 true,
-			DockerExecHandlerName:       "native",
-			EventBurst:                  10,
-			EventRecordQPS:              5.0,
-			EnableCustomMetrics:         false,
-			EnableDebuggingHandlers:     true,
-			EnableServer:                true,
-			FileCheckFrequency:          unversioned.Duration{Duration: 20 * time.Second},
-			HealthzBindAddress:          "127.0.0.1",
-			HealthzPort:                 10248,
-			HostNetworkSources:          kubetypes.AllSource,
-			HostPIDSources:              kubetypes.AllSource,
-			HostIPCSources:              kubetypes.AllSource,
-			HTTPCheckFrequency:          unversioned.Duration{Duration: 20 * time.Second},
-			ImageMinimumGCAge:           unversioned.Duration{Duration: 2 * time.Minute},
-			ImageGCHighThresholdPercent: 90,
-			ImageGCLowThresholdPercent:  80,
-			LowDiskSpaceThresholdMB:     256,
-			MasterServiceNamespace:      api.NamespaceDefault,
-			MaxContainerCount:           240,
-			MaxPerPodContainerCount:     2,
-			MaxOpenFiles:                1000000,
-			MaxPods:                     110,
-			NvidiaGPUs:                  0,
-			MinimumGCAge:                unversioned.Duration{Duration: 1 * time.Minute},
-			NetworkPluginDir:            "/usr/libexec/kubernetes/kubelet-plugins/net/exec/",
-			NetworkPluginName:           "",
-			NonMasqueradeCIDR:           "10.0.0.0/8",
-			VolumePluginDir:             "/usr/libexec/kubernetes/kubelet-plugins/volume/exec/",
-			NodeStatusUpdateFrequency:   unversioned.Duration{Duration: 10 * time.Second},
-			NodeLabels:                  make(map[string]string),
-			OOMScoreAdj:                 int32(qos.KubeletOOMScoreAdj),
-			LockFilePath:                "",
-			ExitOnLockContention:        false,
-			PodInfraContainerImage:      GetDefaultPodInfraContainerImage(),
+			Address:                      "0.0.0.0",
+			CAdvisorPort:                 4194,
+			VolumeStatsAggPeriod:         unversioned.Duration{Duration: time.Minute},
+			CertDirectory:                "/var/run/kubernetes",
+			CgroupRoot:                   "",
+			ConfigureCBR0:                false,
+			ContainerRuntime:             "docker",
+			CPUCFSQuota:                  true,
+			DockerExecHandlerName:        "native",
+			EventBurst:                   10,
+			EventRecordQPS:               5.0,
+			EnableControllerAttachDetach: true,
+			EnableCustomMetrics:          false,
+			EnableDebuggingHandlers:      true,
+			EnableServer:                 true,
+			FileCheckFrequency:           unversioned.Duration{Duration: 20 * time.Second},
+			HealthzBindAddress:           "127.0.0.1",
+			HealthzPort:                  10248,
+			HostNetworkSources:           kubetypes.AllSource,
+			HostPIDSources:               kubetypes.AllSource,
+			HostIPCSources:               kubetypes.AllSource,
+			HTTPCheckFrequency:           unversioned.Duration{Duration: 20 * time.Second},
+			ImageMinimumGCAge:            unversioned.Duration{Duration: 2 * time.Minute},
+			ImageGCHighThresholdPercent:  90,
+			ImageGCLowThresholdPercent:   80,
+			LowDiskSpaceThresholdMB:      256,
+			MasterServiceNamespace:       api.NamespaceDefault,
+			MaxContainerCount:            240,
+			MaxPerPodContainerCount:      2,
+			MaxOpenFiles:                 1000000,
+			MaxPods:                      110,
+			NvidiaGPUs:                   0,
+			MinimumGCAge:                 unversioned.Duration{Duration: 1 * time.Minute},
+			NetworkPluginDir:             "/usr/libexec/kubernetes/kubelet-plugins/net/exec/",
+			NetworkPluginName:            "",
+			NonMasqueradeCIDR:            "10.0.0.0/8",
+			VolumePluginDir:              "/usr/libexec/kubernetes/kubelet-plugins/volume/exec/",
+			NodeStatusUpdateFrequency:    unversioned.Duration{Duration: 10 * time.Second},
+			NodeLabels:                   make(map[string]string),
+			OOMScoreAdj:                  int32(qos.KubeletOOMScoreAdj),
+			LockFilePath:                 "",
+			ExitOnLockContention:         false,
+			PodInfraContainerImage:       GetDefaultPodInfraContainerImage(),
 			Port:                             ports.KubeletPort,
 			ReadOnlyPort:                     ports.KubeletReadOnlyPort,
 			RegisterNode:                     true, // will be ignored if no apiserver is configured
@@ -132,6 +135,7 @@ func NewKubeletServer() *KubeletServer {
 			RootDirectory:                    defaultRootDir,
 			RuntimeCgroups:                   "",
 			SerializeImagePulls:              true,
+			SeccompProfileRoot:               filepath.Join(defaultRootDir, "seccomp"),
 			StreamingConnectionIdleTimeout:   unversioned.Duration{Duration: 4 * time.Hour},
 			SyncFrequency:                    unversioned.Duration{Duration: 1 * time.Minute},
 			SystemCgroups:                    "",
@@ -144,6 +148,7 @@ func NewKubeletServer() *KubeletServer {
 			HairpinMode:                      componentconfig.PromiscuousBridge,
 			BabysitDaemons:                   false,
 			EvictionPressureTransitionPeriod: unversioned.Duration{Duration: 5 * time.Minute},
+			PodsPerCore:                      0,
 		},
 	}
 }
@@ -171,6 +176,7 @@ func (s *KubeletServer) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&s.PodInfraContainerImage, "pod-infra-container-image", s.PodInfraContainerImage, "The image whose network/ipc namespaces containers in each pod will use.")
 	fs.StringVar(&s.DockerEndpoint, "docker-endpoint", s.DockerEndpoint, "If non-empty, use this for the docker endpoint to communicate with")
 	fs.StringVar(&s.RootDirectory, "root-dir", s.RootDirectory, "Directory path for managing kubelet files (volume mounts,etc).")
+	fs.StringVar(&s.SeccompProfileRoot, "seccomp-profile-root", s.SeccompProfileRoot, "Directory path for seccomp profiles.")
 	fs.BoolVar(&s.AllowPrivileged, "allow-privileged", s.AllowPrivileged, "If true, allow containers to request privileged mode. [default=false]")
 	fs.StringVar(&s.HostNetworkSources, "host-network-sources", s.HostNetworkSources, "Comma-separated list of sources from which the Kubelet allows pods to use of host network. [default=\"*\"]")
 	fs.StringVar(&s.HostPIDSources, "host-pid-sources", s.HostPIDSources, "Comma-separated list of sources from which the Kubelet allows pods to use the host pid namespace. [default=\"*\"]")
@@ -238,6 +244,8 @@ func (s *KubeletServer) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&s.PodCIDR, "pod-cidr", "", "The CIDR to use for pod IP addresses, only used in standalone mode.  In cluster mode, this is obtained from the master.")
 	fs.StringVar(&s.ResolverConfig, "resolv-conf", s.ResolverConfig, "Resolver configuration file used as the basis for the container DNS resolution configuration.")
 	fs.BoolVar(&s.CPUCFSQuota, "cpu-cfs-quota", s.CPUCFSQuota, "Enable CPU CFS quota enforcement for containers that specify CPU limits")
+	fs.BoolVar(&s.EnableControllerAttachDetach, "enable-controller-attach-detach", s.EnableControllerAttachDetach, "Enables the Attach/Detach controller to manage attachment/detachment of volumes scheduled to this node, and disables kubelet from executing any attach/detach operations")
+
 	// Flags intended for testing, not recommended used in production environments.
 	fs.BoolVar(&s.ReallyCrashForTesting, "really-crash-for-testing", s.ReallyCrashForTesting, "If true, when panics occur crash. Intended for testing.")
 	fs.Float64Var(&s.ChaosChance, "chaos-chance", s.ChaosChance, "If > 0.0, introduce random client errors and latency. Intended for testing. [default=0.0]")
@@ -261,4 +269,5 @@ func (s *KubeletServer) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&s.EvictionSoftGracePeriod, "eviction-soft-grace-period", s.EvictionSoftGracePeriod, "A set of eviction grace periods (e.g. memory.available=1m30s) that correspond to how long a soft eviction threshold must hold before triggering a pod eviction.")
 	fs.DurationVar(&s.EvictionPressureTransitionPeriod.Duration, "eviction-pressure-transition-period", s.EvictionPressureTransitionPeriod.Duration, "Duration for which the kubelet has to wait before transitioning out of an eviction pressure condition.")
 	fs.Int32Var(&s.EvictionMaxPodGracePeriod, "eviction-max-pod-grace-period", s.EvictionMaxPodGracePeriod, "Maximum allowed grace period (in seconds) to use when terminating pods in response to a soft eviction threshold being met.  If negative, defer to pod specified value.")
+	fs.Int32Var(&s.PodsPerCore, "pods-per-core", s.PodsPerCore, "Number of Pods per core that can run on this Kubelet. The total number of Pods on this Kubelet cannot exceed max-pods, so max-pods will be used if this caulcation results in a larger number of Pods allowed on the Kubelet. A value of 0 disables this limit.")
 }

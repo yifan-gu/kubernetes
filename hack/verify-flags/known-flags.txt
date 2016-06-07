@@ -22,6 +22,7 @@ authentication-token-webhook-cache-ttl
 authentication-token-webhook-config-file
 authorization-mode
 authorization-policy-file
+authorization-rbac-super-user
 authorization-webhook-config-file
 authorization-webhook-cache-authorized-ttl
 authorization-webhook-cache-unauthorized-ttl
@@ -62,11 +63,16 @@ concurrent-deployment-syncs
 concurrent-endpoint-syncs
 concurrent-namespace-syncs
 concurrent-replicaset-syncs
+concurrent-service-syncs
 concurrent-resource-quota-syncs
 config-sync-period
 configure-cbr0
+configure-cloud-routes
 conntrack-max
 conntrack-tcp-timeout-established
+consumer-port
+consumer-service-name
+consumer-service-namespace
 contain-pod-resources
 container-port
 container-runtime
@@ -90,6 +96,7 @@ deployment-label-key
 deserialization-cache-size
 dest-file
 disable-filter
+dns-port
 docker-email
 docker-endpoint
 docker-exec-handler
@@ -104,11 +111,14 @@ dump-logs-on-failure
 duration-sec
 e2e-output-dir
 e2e-verify-service-account
+enable-controller-attach-detach
 enable-custom-metrics
 enable-debugging-handlers
+enable-garbage-collector
 enable-hostpath-provisioner
 enable-server
 enable-swagger-ui
+enable-garbage-collector
 etcd-cafile
 etcd-certfile
 etcd-config
@@ -143,9 +153,11 @@ failure-domains
 fake-clientset
 federated-api-burst
 federated-api-qps
+federated-kube-context
 file-check-frequency
 file-suffix
 file_content_in_loop
+flex-volume-plugin-dir
 forward-services
 framework-name
 framework-store-uri
@@ -160,6 +172,7 @@ gather-resource-usage
 gce-project
 gce-service-account
 gce-zone
+ginkgo-flags
 gke-cluster
 go-header-file
 google-json-key
@@ -181,6 +194,7 @@ ignore-daemonsets
 ignore-not-found
 image-gc-high-threshold
 image-gc-low-threshold
+image-project
 image-pull-policy
 include-extended-apis
 included-types-overrides
@@ -324,6 +338,7 @@ pod-cidr
 pod-eviction-timeout
 pod-infra-container-image
 pod-running
+pods-per-core
 policy-config-file
 poll-interval
 portal-net
@@ -382,6 +397,7 @@ save-config
 scheduler-config
 scheduler-name
 schema-cache-dir
+seccomp-profile-root
 secure-port
 serialize-image-pulls
 server-start-timeout
@@ -396,6 +412,7 @@ service-node-ports
 service-overrides
 service-sync-period
 session-affinity
+setup-node
 show-all
 show-events
 show-labels

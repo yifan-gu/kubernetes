@@ -17,12 +17,20 @@ limitations under the License.
 package e2e_node
 
 import (
-	"github.com/golang/glog"
 	"os/exec"
+	"time"
+
+	"github.com/golang/glog"
+
+	"k8s.io/kubernetes/test/e2e/framework"
 )
 
 const (
-	busyBoxImage = iota
+	// Number of attempts to pull an image.
+	maxImagePullRetries = 5
+	// Sleep duration between image pull retry attempts.
+	imagePullRetryDelay = time.Second
+	busyBoxImage        = iota
 
 	hostExecImage
 	netExecImage
@@ -39,7 +47,7 @@ var ImageRegistry = map[int]string{
 	hostExecImage: "gcr.io/google_containers/hostexec:1.2",
 	netExecImage:  "gcr.io/google_containers/netexec:1.4",
 	nginxImage:    "gcr.io/google_containers/nginx:1.7.9",
-	pauseImage:    "gcr.io/google_containers/pause-amd64:3.0",
+	pauseImage:    framework.GetPauseImageNameForHostArch(),
 }
 
 // These are used by tests that explicitly test the ability to pull images
@@ -51,7 +59,20 @@ var NoPullImagRegistry = map[int]string{
 // Pre-fetch all images tests depend on so that we don't fail in an actual test
 func PrePullAllImages() error {
 	for _, image := range ImageRegistry {
-		output, err := exec.Command("docker", "pull", image).CombinedOutput()
+		var (
+			err    error
+			output []byte
+		)
+		for i := 0; i < maxImagePullRetries; i++ {
+			if i > 0 {
+				time.Sleep(imagePullRetryDelay)
+			}
+			if output, err = exec.Command("docker", "pull", image).CombinedOutput(); err == nil {
+				break
+			}
+			glog.Warningf("Failed to pull %s, retrying in %s (%d of %d): %v",
+				image, imagePullRetryDelay.String(), i+1, maxImagePullRetries, err)
+		}
 		if err != nil {
 			glog.Warningf("Could not pre-pull image %s %v output:  %s", image, err, output)
 			return err

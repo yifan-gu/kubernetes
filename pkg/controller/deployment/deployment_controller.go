@@ -331,7 +331,7 @@ func (dc *DeploymentController) updatePod(old, cur interface{}) {
 	}
 	curPod := cur.(*api.Pod)
 	oldPod := old.(*api.Pod)
-	glog.V(4).Infof("Pod %s updated %+v -> %+v.", curPod.Name, oldPod, curPod)
+	glog.V(4).Infof("Pod %s updated %#v -> %#v.", curPod.Name, oldPod, curPod)
 	if d := dc.getDeploymentForPod(curPod); d != nil {
 		dc.enqueueDeployment(d)
 	}
@@ -627,7 +627,12 @@ func (dc *DeploymentController) syncDeploymentStatus(allRSs []*extensions.Replic
 //    only if its revision number is smaller than (maxOldV + 1). If this step failed, we'll update it in the next deployment sync loop.
 // 3. Copy new RS's revision number to deployment (update deployment's revision). If this step failed, we'll update it in the next deployment sync loop.
 func (dc *DeploymentController) getAllReplicaSetsAndSyncRevision(deployment *extensions.Deployment, createIfNotExisted bool) (*extensions.ReplicaSet, []*extensions.ReplicaSet, error) {
-	_, allOldRSs, err := dc.getOldReplicaSets(deployment)
+	// List the deployment's RSes & Pods and apply pod-template-hash info to deployment's adopted RSes/Pods
+	rsList, podList, err := dc.rsAndPodsWithHashKeySynced(deployment)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error labeling replica sets and pods with pod-template-hash: %v", err)
+	}
+	_, allOldRSs, err := deploymentutil.FindOldReplicaSets(deployment, rsList, podList)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -636,7 +641,7 @@ func (dc *DeploymentController) getAllReplicaSetsAndSyncRevision(deployment *ext
 	maxOldV := maxRevision(allOldRSs)
 
 	// Get new replica set with the updated revision number
-	newRS, err := dc.getNewReplicaSet(deployment, maxOldV, allOldRSs, createIfNotExisted)
+	newRS, err := dc.getNewReplicaSet(deployment, rsList, maxOldV, allOldRSs, createIfNotExisted)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -682,32 +687,15 @@ func lastRevision(allRSs []*extensions.ReplicaSet) int64 {
 	return secMax
 }
 
-// getOldReplicaSets returns two sets of old replica sets of the deployment. The first set of old replica sets doesn't include
-// the ones with no pods, and the second set of old replica sets include all old replica sets.
-// Note that the pod-template-hash will be added to adopted RSes and pods.
-func (dc *DeploymentController) getOldReplicaSets(deployment *extensions.Deployment) ([]*extensions.ReplicaSet, []*extensions.ReplicaSet, error) {
-	// List the deployment's RSes & Pods and apply pod-template-hash info to deployment's adopted RSes/Pods
-	rsList, podList, err := dc.rsAndPodsWithHashKeySynced(deployment)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error labeling replica sets and pods with pod-template-hash: %v", err)
-	}
-	return deploymentutil.FindOldReplicaSets(deployment, rsList, podList)
-}
-
 // Returns a replica set that matches the intent of the given deployment. Returns nil if the new replica set doesn't exist yet.
 // 1. Get existing new RS (the RS that the given deployment targets, whose pod template is the same as deployment's).
 // 2. If there's existing new RS, update its revision number if it's smaller than (maxOldRevision + 1), where maxOldRevision is the max revision number among all old RSes.
 // 3. If there's no existing new RS and createIfNotExisted is true, create one with appropriate revision number (maxOldRevision + 1) and replicas.
 // Note that the pod-template-hash will be added to adopted RSes and pods.
-func (dc *DeploymentController) getNewReplicaSet(deployment *extensions.Deployment, maxOldRevision int64, oldRSs []*extensions.ReplicaSet, createIfNotExisted bool) (*extensions.ReplicaSet, error) {
+func (dc *DeploymentController) getNewReplicaSet(deployment *extensions.Deployment, rsList []extensions.ReplicaSet, maxOldRevision int64, oldRSs []*extensions.ReplicaSet, createIfNotExisted bool) (*extensions.ReplicaSet, error) {
 	// Calculate revision number for this new replica set
 	newRevision := strconv.FormatInt(maxOldRevision+1, 10)
 
-	// List the deployment's RSes and apply pod-template-hash info to deployment's adopted RSes/Pods
-	rsList, _, err := dc.rsAndPodsWithHashKeySynced(deployment)
-	if err != nil {
-		return nil, fmt.Errorf("error labeling replica sets and pods with pod-template-hash: %v", err)
-	}
 	existingNewRS, err := deploymentutil.FindNewReplicaSet(deployment, rsList)
 	if err != nil {
 		return nil, err
@@ -1059,7 +1047,7 @@ func (dc *DeploymentController) reconcileOldReplicaSets(allRSs []*extensions.Rep
 	if err != nil {
 		return false, nil
 	}
-	glog.V(4).Infof("Scaled down old RSes by %d", scaledDownCount)
+	glog.V(4).Infof("Scaled down old RSes of deployment %s by %d", deployment.Name, scaledDownCount)
 
 	totalScaledDown := cleanupCount + scaledDownCount
 	return totalScaledDown > 0, nil
@@ -1116,19 +1104,20 @@ func (dc *DeploymentController) scaleDownOldReplicaSetsForRollingUpdate(allRSs [
 	minAvailable := deployment.Spec.Replicas - maxUnavailable
 	minReadySeconds := deployment.Spec.MinReadySeconds
 	// Find the number of ready pods.
-	readyPodCount, err := deploymentutil.GetAvailablePodsForReplicaSets(dc.client, allRSs, minReadySeconds)
+	availablePodCount, err := deploymentutil.GetAvailablePodsForReplicaSets(dc.client, allRSs, minReadySeconds)
 	if err != nil {
 		return 0, fmt.Errorf("could not find available pods: %v", err)
 	}
-	if readyPodCount <= minAvailable {
+	if availablePodCount <= minAvailable {
 		// Cannot scale down.
 		return 0, nil
 	}
+	glog.V(4).Infof("Found %d available pods in deployment %s, scaling down old RSes", availablePodCount, deployment.Name)
 
 	sort.Sort(controller.ReplicaSetsByCreationTimestamp(oldRSs))
 
 	totalScaledDown := int32(0)
-	totalScaleDownCount := readyPodCount - minAvailable
+	totalScaleDownCount := availablePodCount - minAvailable
 	for _, targetRS := range oldRSs {
 		if totalScaledDown >= totalScaleDownCount {
 			// No further scaling required.
@@ -1221,6 +1210,9 @@ func (dc *DeploymentController) updateDeploymentStatus(allRSs []*extensions.Repl
 		UnavailableReplicas: unavailableReplicas,
 	}
 	_, err = dc.client.Extensions().Deployments(deployment.ObjectMeta.Namespace).UpdateStatus(&newDeployment)
+	if err == nil {
+		glog.V(4).Infof("Updated deployment %s status: %+v", deployment.Name, newDeployment.Status)
+	}
 	return err
 }
 

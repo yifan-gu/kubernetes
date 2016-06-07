@@ -240,6 +240,7 @@ func startComponents(firstManifestURL, secondManifestURL string) (string, string
 		10*time.Second, /* OutOfDiskTransitionFrequency */
 		10*time.Second, /* EvictionPressureTransitionPeriod */
 		40,             /* MaxPods */
+		0,              /* PodsPerCore*/
 		cm, net.ParseIP("127.0.0.1"))
 
 	kubeletapp.RunKubelet(kcfg)
@@ -273,6 +274,7 @@ func startComponents(firstManifestURL, secondManifestURL string) (string, string
 		10*time.Second, /* OutOfDiskTransitionFrequency */
 		10*time.Second, /* EvictionPressureTransitionPeriod */
 		40,             /* MaxPods */
+		0,              /* PodsPerCore*/
 		cm,
 		net.ParseIP("127.0.0.1"))
 
@@ -785,7 +787,7 @@ func runSchedulerNoPhantomPodsTest(client *client.Client) {
 			Containers: []api.Container{
 				{
 					Name:  "c1",
-					Image: "gcr.io/google_containers/pause-amd64:3.0",
+					Image: e2e.GetPauseImageName(client),
 					Ports: []api.ContainerPort{
 						{ContainerPort: 1234, HostPort: 9999},
 					},
@@ -795,7 +797,7 @@ func runSchedulerNoPhantomPodsTest(client *client.Client) {
 		},
 	}
 
-	// Assuming we only have two kublets, the third pod here won't schedule
+	// Assuming we only have two kubelets, the third pod here won't schedule
 	// if the scheduler doesn't correctly handle the delete for the second
 	// pod.
 	pod.ObjectMeta.Name = "phantom.foo"

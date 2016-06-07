@@ -44,8 +44,9 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/network"
 	nettest "k8s.io/kubernetes/pkg/kubelet/network/testing"
 	proberesults "k8s.io/kubernetes/pkg/kubelet/prober/results"
+	"k8s.io/kubernetes/pkg/kubelet/types"
 	"k8s.io/kubernetes/pkg/runtime"
-	"k8s.io/kubernetes/pkg/types"
+	kubetypes "k8s.io/kubernetes/pkg/types"
 	"k8s.io/kubernetes/pkg/util"
 	uexec "k8s.io/kubernetes/pkg/util/exec"
 	"k8s.io/kubernetes/pkg/util/flowcontrol"
@@ -93,7 +94,7 @@ func (f *fakeRuntimeHelper) GeneratePodHostNameAndDomain(pod *api.Pod) (string, 
 	return "", "", nil
 }
 
-func (f *fakeRuntimeHelper) GetPodDir(types.UID) string {
+func (f *fakeRuntimeHelper) GetPodDir(kubetypes.UID) string {
 	return ""
 }
 
@@ -338,13 +339,13 @@ func TestGetPods(t *testing.T) {
 
 	expected := []*kubecontainer.Pod{
 		{
-			ID:         types.UID("1234"),
+			ID:         kubetypes.UID("1234"),
 			Name:       "qux",
 			Namespace:  "new",
 			Containers: []*kubecontainer.Container{containers[0], containers[1]},
 		},
 		{
-			ID:         types.UID("5678"),
+			ID:         kubetypes.UID("5678"),
 			Name:       "jlk",
 			Namespace:  "wen",
 			Containers: []*kubecontainer.Container{containers[2]},
@@ -458,8 +459,8 @@ func TestKillContainerInPodWithPreStop(t *testing.T) {
 			Name: "/k8s_foo_qux_new_1234_42",
 			Config: &dockercontainer.Config{
 				Labels: map[string]string{
-					kubernetesPodLabel:           string(podString),
-					kubernetesContainerNameLabel: "foo",
+					kubernetesPodLabel:                 string(podString),
+					types.KubernetesContainerNameLabel: "foo",
 				},
 			},
 		},
@@ -1714,7 +1715,7 @@ func verifySyncResults(t *testing.T, expectedResults []*kubecontainer.SyncResult
 	}
 }
 
-func TestSeccompIsDisabledWithDockerV110(t *testing.T) {
+func TestSeccompIsUnconfinedByDefaultWithDockerV110(t *testing.T) {
 	dm, fakeDocker := newTestDockerManagerWithVersion("1.10.1", "1.22")
 	pod := &api.Pod{
 		ObjectMeta: api.ObjectMeta{
@@ -1750,7 +1751,134 @@ func TestSeccompIsDisabledWithDockerV110(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error %v", err)
 	}
-	assert.Contains(t, newContainer.HostConfig.SecurityOpt, "seccomp:unconfined", "Pods with Docker versions >= 1.10 must have seccomp disabled.")
+	assert.Contains(t, newContainer.HostConfig.SecurityOpt, "seccomp:unconfined", "Pods with Docker versions >= 1.10 must not have seccomp disabled by default")
+}
+
+func TestUnconfinedSeccompProfileWithDockerV110(t *testing.T) {
+	dm, fakeDocker := newTestDockerManagerWithVersion("1.10.1", "1.22")
+	pod := &api.Pod{
+		ObjectMeta: api.ObjectMeta{
+			UID:       "12345678",
+			Name:      "foo4",
+			Namespace: "new",
+			Annotations: map[string]string{
+				"security.alpha.kubernetes.io/seccomp/pod": "unconfined",
+			},
+		},
+		Spec: api.PodSpec{
+			Containers: []api.Container{
+				{Name: "bar4"},
+			},
+		},
+	}
+
+	runSyncPod(t, dm, fakeDocker, pod, nil, false)
+
+	verifyCalls(t, fakeDocker, []string{
+		// Create pod infra container.
+		"create", "start", "inspect_container", "inspect_container",
+		// Create container.
+		"create", "start", "inspect_container",
+	})
+
+	fakeDocker.Lock()
+	if len(fakeDocker.Created) != 2 ||
+		!matchString(t, "/k8s_POD\\.[a-f0-9]+_foo4_new_", fakeDocker.Created[0]) ||
+		!matchString(t, "/k8s_bar4\\.[a-f0-9]+_foo4_new_", fakeDocker.Created[1]) {
+		t.Errorf("unexpected containers created %v", fakeDocker.Created)
+	}
+	fakeDocker.Unlock()
+
+	newContainer, err := fakeDocker.InspectContainer(fakeDocker.Created[1])
+	if err != nil {
+		t.Fatalf("unexpected error %v", err)
+	}
+	assert.Contains(t, newContainer.HostConfig.SecurityOpt, "seccomp:unconfined", "Pods created with a secccomp annotation of unconfined should have seccomp:unconfined.")
+}
+
+func TestDefaultSeccompProfileWithDockerV110(t *testing.T) {
+	dm, fakeDocker := newTestDockerManagerWithVersion("1.10.1", "1.22")
+	pod := &api.Pod{
+		ObjectMeta: api.ObjectMeta{
+			UID:       "12345678",
+			Name:      "foo1",
+			Namespace: "new",
+			Annotations: map[string]string{
+				"security.alpha.kubernetes.io/seccomp/pod": "docker/default",
+			},
+		},
+		Spec: api.PodSpec{
+			Containers: []api.Container{
+				{Name: "bar1"},
+			},
+		},
+	}
+
+	runSyncPod(t, dm, fakeDocker, pod, nil, false)
+
+	verifyCalls(t, fakeDocker, []string{
+		// Create pod infra container.
+		"create", "start", "inspect_container", "inspect_container",
+		// Create container.
+		"create", "start", "inspect_container",
+	})
+
+	fakeDocker.Lock()
+	if len(fakeDocker.Created) != 2 ||
+		!matchString(t, "/k8s_POD\\.[a-f0-9]+_foo1_new_", fakeDocker.Created[0]) ||
+		!matchString(t, "/k8s_bar1\\.[a-f0-9]+_foo1_new_", fakeDocker.Created[1]) {
+		t.Errorf("unexpected containers created %v", fakeDocker.Created)
+	}
+	fakeDocker.Unlock()
+
+	newContainer, err := fakeDocker.InspectContainer(fakeDocker.Created[1])
+	if err != nil {
+		t.Fatalf("unexpected error %v", err)
+	}
+	assert.NotContains(t, newContainer.HostConfig.SecurityOpt, "seccomp:unconfined", "Pods created with a secccomp annotation of docker/default should have empty security opt.")
+}
+
+func TestSeccompContainerAnnotationTrumpsPod(t *testing.T) {
+	dm, fakeDocker := newTestDockerManagerWithVersion("1.10.1", "1.22")
+	pod := &api.Pod{
+		ObjectMeta: api.ObjectMeta{
+			UID:       "12345678",
+			Name:      "foo2",
+			Namespace: "new",
+			Annotations: map[string]string{
+				"security.alpha.kubernetes.io/seccomp/pod":            "unconfined",
+				"security.alpha.kubernetes.io/seccomp/container/bar2": "docker/default",
+			},
+		},
+		Spec: api.PodSpec{
+			Containers: []api.Container{
+				{Name: "bar2"},
+			},
+		},
+	}
+
+	runSyncPod(t, dm, fakeDocker, pod, nil, false)
+
+	verifyCalls(t, fakeDocker, []string{
+		// Create pod infra container.
+		"create", "start", "inspect_container", "inspect_container",
+		// Create container.
+		"create", "start", "inspect_container",
+	})
+
+	fakeDocker.Lock()
+	if len(fakeDocker.Created) != 2 ||
+		!matchString(t, "/k8s_POD\\.[a-f0-9]+_foo2_new_", fakeDocker.Created[0]) ||
+		!matchString(t, "/k8s_bar2\\.[a-f0-9]+_foo2_new_", fakeDocker.Created[1]) {
+		t.Errorf("unexpected containers created %v", fakeDocker.Created)
+	}
+	fakeDocker.Unlock()
+
+	newContainer, err := fakeDocker.InspectContainer(fakeDocker.Created[1])
+	if err != nil {
+		t.Fatalf("unexpected error %v", err)
+	}
+	assert.NotContains(t, newContainer.HostConfig.SecurityOpt, "seccomp:unconfined", "Container annotation should trump the pod annotation for seccomp.")
 }
 
 func TestSecurityOptsAreNilWithDockerV19(t *testing.T) {
@@ -1891,4 +2019,38 @@ func TestGetPodStatusNoSuchContainer(t *testing.T) {
 		// Start a new container.
 		"create", "start", "inspect_container",
 	})
+}
+
+func TestPruneInitContainers(t *testing.T) {
+	dm, fake := newTestDockerManager()
+	pod := &api.Pod{
+		Spec: api.PodSpec{
+			InitContainers: []api.Container{
+				{Name: "init1"},
+				{Name: "init2"},
+			},
+		},
+	}
+	status := &kubecontainer.PodStatus{
+		ContainerStatuses: []*kubecontainer.ContainerStatus{
+			{Name: "init2", ID: kubecontainer.ContainerID{ID: "init2-new-1"}, State: kubecontainer.ContainerStateExited},
+			{Name: "init1", ID: kubecontainer.ContainerID{ID: "init1-new-1"}, State: kubecontainer.ContainerStateExited},
+			{Name: "init1", ID: kubecontainer.ContainerID{ID: "init1-new-2"}, State: kubecontainer.ContainerStateExited},
+			{Name: "init1", ID: kubecontainer.ContainerID{ID: "init1-old-1"}, State: kubecontainer.ContainerStateExited},
+			{Name: "init2", ID: kubecontainer.ContainerID{ID: "init2-old-1"}, State: kubecontainer.ContainerStateExited},
+		},
+	}
+	fake.ExitedContainerList = []dockertypes.Container{
+		{ID: "init1-new-1"},
+		{ID: "init1-new-2"},
+		{ID: "init1-old-1"},
+		{ID: "init2-new-1"},
+		{ID: "init2-old-1"},
+	}
+	keep := map[kubecontainer.DockerID]int{}
+	dm.pruneInitContainersBeforeStart(pod, status, keep)
+	sort.Sort(sort.StringSlice(fake.Removed))
+	if !reflect.DeepEqual([]string{"init1-new-2", "init1-old-1", "init2-old-1"}, fake.Removed) {
+		t.Fatal(fake.Removed)
+	}
 }

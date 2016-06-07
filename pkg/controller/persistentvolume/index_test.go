@@ -17,17 +17,14 @@ limitations under the License.
 package persistentvolume
 
 import (
+	"sort"
 	"testing"
 
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/resource"
 	"k8s.io/kubernetes/pkg/api/testapi"
-	"k8s.io/kubernetes/pkg/client/cache"
+	"k8s.io/kubernetes/pkg/api/unversioned"
 )
-
-func newPersistentVolumeOrderedIndex() persistentVolumeOrderedIndex {
-	return persistentVolumeOrderedIndex{cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{"accessmodes": accessModesIndexFunc})}
-}
 
 func TestMatchVolume(t *testing.T) {
 	volList := newPersistentVolumeOrderedIndex()
@@ -102,6 +99,72 @@ func TestMatchVolume(t *testing.T) {
 					Resources: api.ResourceRequirements{
 						Requests: api.ResourceList{
 							api.ResourceName(api.ResourceStorage): resource.MustParse("999G"),
+						},
+					},
+				},
+			},
+		},
+		"successful-no-match-due-to-label": {
+			expectedMatch: "",
+			claim: &api.PersistentVolumeClaim{
+				ObjectMeta: api.ObjectMeta{
+					Name:      "claim01",
+					Namespace: "myns",
+				},
+				Spec: api.PersistentVolumeClaimSpec{
+					Selector: &unversioned.LabelSelector{
+						MatchLabels: map[string]string{
+							"should-not-exist": "true",
+						},
+					},
+					AccessModes: []api.PersistentVolumeAccessMode{api.ReadOnlyMany, api.ReadWriteOnce},
+					Resources: api.ResourceRequirements{
+						Requests: api.ResourceList{
+							api.ResourceName(api.ResourceStorage): resource.MustParse("999G"),
+						},
+					},
+				},
+			},
+		},
+		"successful-no-match-due-to-size-constraint-with-label-selector": {
+			expectedMatch: "",
+			claim: &api.PersistentVolumeClaim{
+				ObjectMeta: api.ObjectMeta{
+					Name:      "claim01",
+					Namespace: "myns",
+				},
+				Spec: api.PersistentVolumeClaimSpec{
+					Selector: &unversioned.LabelSelector{
+						MatchLabels: map[string]string{
+							"should-exist": "true",
+						},
+					},
+					AccessModes: []api.PersistentVolumeAccessMode{api.ReadOnlyMany, api.ReadWriteOnce},
+					Resources: api.ResourceRequirements{
+						Requests: api.ResourceList{
+							api.ResourceName(api.ResourceStorage): resource.MustParse("20000G"),
+						},
+					},
+				},
+			},
+		},
+		"successful-match-due-with-constraint-and-label-selector": {
+			expectedMatch: "gce-pd-2",
+			claim: &api.PersistentVolumeClaim{
+				ObjectMeta: api.ObjectMeta{
+					Name:      "claim01",
+					Namespace: "myns",
+				},
+				Spec: api.PersistentVolumeClaimSpec{
+					Selector: &unversioned.LabelSelector{
+						MatchLabels: map[string]string{
+							"should-exist": "true",
+						},
+					},
+					AccessModes: []api.PersistentVolumeAccessMode{api.ReadWriteOnce},
+					Resources: api.ResourceRequirements{
+						Requests: api.ResourceList{
+							api.ResourceName(api.ResourceStorage): resource.MustParse("10000G"),
 						},
 					},
 				},
@@ -193,7 +256,7 @@ func TestMatchingWithBoundVolumes(t *testing.T) {
 	}
 }
 
-func TestSort(t *testing.T) {
+func TestListByAccessModes(t *testing.T) {
 	volList := newPersistentVolumeOrderedIndex()
 	for _, pv := range createTestVolumes() {
 		volList.store.Add(pv)
@@ -203,6 +266,7 @@ func TestSort(t *testing.T) {
 	if err != nil {
 		t.Error("Unexpected error retrieving volumes by access modes:", err)
 	}
+	sort.Sort(byCapacity{volumes})
 
 	for i, expected := range []string{"gce-pd-1", "gce-pd-5", "gce-pd-10"} {
 		if string(volumes[i].UID) != expected {
@@ -214,6 +278,7 @@ func TestSort(t *testing.T) {
 	if err != nil {
 		t.Error("Unexpected error retrieving volumes by access modes:", err)
 	}
+	sort.Sort(byCapacity{volumes})
 
 	for i, expected := range []string{"nfs-1", "nfs-5", "nfs-10"} {
 		if string(volumes[i].UID) != expected {
@@ -230,8 +295,8 @@ func TestAllPossibleAccessModes(t *testing.T) {
 
 	// the mock PVs creates contain 2 types of accessmodes:   RWO+ROX and RWO+ROW+RWX
 	possibleModes := index.allPossibleMatchingAccessModes([]api.PersistentVolumeAccessMode{api.ReadWriteOnce})
-	if len(possibleModes) != 2 {
-		t.Errorf("Expected 2 arrays of modes that match RWO, but got %v", len(possibleModes))
+	if len(possibleModes) != 3 {
+		t.Errorf("Expected 3 arrays of modes that match RWO, but got %v", len(possibleModes))
 	}
 	for _, m := range possibleModes {
 		if !contains(m, api.ReadWriteOnce) {
@@ -488,6 +553,26 @@ func createTestVolumes() []*api.PersistentVolume {
 				},
 			},
 		},
+		{
+			ObjectMeta: api.ObjectMeta{
+				UID:  "gce-pd-2",
+				Name: "gce0022",
+				Labels: map[string]string{
+					"should-exist": "true",
+				},
+			},
+			Spec: api.PersistentVolumeSpec{
+				Capacity: api.ResourceList{
+					api.ResourceName(api.ResourceStorage): resource.MustParse("10000G"),
+				},
+				PersistentVolumeSource: api.PersistentVolumeSource{
+					GCEPersistentDisk: &api.GCEPersistentDiskVolumeSource{},
+				},
+				AccessModes: []api.PersistentVolumeAccessMode{
+					api.ReadWriteOnce,
+				},
+			},
+		},
 	}
 }
 
@@ -551,4 +636,21 @@ func TestFindingPreboundVolumes(t *testing.T) {
 	if volume.Name != pv8.Name {
 		t.Errorf("Expected %s but got volume %s instead", pv8.Name, volume.Name)
 	}
+}
+
+// byCapacity is used to order volumes by ascending storage size
+type byCapacity struct {
+	volumes []*api.PersistentVolume
+}
+
+func (c byCapacity) Less(i, j int) bool {
+	return matchStorageCapacity(c.volumes[i], c.volumes[j])
+}
+
+func (c byCapacity) Swap(i, j int) {
+	c.volumes[i], c.volumes[j] = c.volumes[j], c.volumes[i]
+}
+
+func (c byCapacity) Len() int {
+	return len(c.volumes)
 }

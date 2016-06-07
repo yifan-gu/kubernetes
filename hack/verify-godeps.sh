@@ -41,10 +41,12 @@ preload-dep() {
 
 KUBE_ROOT=$(dirname "${BASH_SOURCE}")/..
 source "${KUBE_ROOT}/hack/lib/init.sh"
+kube::golang::verify_godep_version
 
 readonly branch=${1:-${KUBE_VERIFY_GIT_BRANCH:-master}}
 if ! [[ ${KUBE_FORCE_VERIFY_CHECKS:-} =~ ^[yY]$ ]] && \
-  ! kube::util::has_changes_against_upstream_branch "${branch}" 'Godeps/'; then
+  ! kube::util::has_changes_against_upstream_branch "${branch}" 'Godeps/' && \
+  ! kube::util::has_changes_against_upstream_branch "${branch}" 'vendor/'; then
   exit 0
 fi
 
@@ -98,7 +100,9 @@ hack/godep-save.sh
 if ! _out="$(diff -Naupr --ignore-matching-lines='^\s*\"GoVersion\":' --ignore-matching-line='^\s*\"GodepVersion\":' --ignore-matching-lines='^\s*\"Comment\":' ${KUBE_ROOT}/Godeps/Godeps.json ${_kubetmp}/Godeps/Godeps.json)"; then
   echo "Your Godeps.json is different:"
   echo "${_out}"
+  echo "Godeps Verify failed."
   exit 1
 fi
 
+echo "Godeps Verified."
 # ex: ts=2 sw=2 et filetype=sh

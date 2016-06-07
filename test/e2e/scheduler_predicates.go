@@ -132,6 +132,14 @@ func waitForStableCluster(c *client.Client) int {
 
 	allPods, err := c.Pods(api.NamespaceAll).List(api.ListOptions{})
 	framework.ExpectNoError(err)
+	// API server returns also Pods that succeeded. We need to filter them out.
+	currentPods := make([]api.Pod, 0, len(allPods.Items))
+	for _, pod := range allPods.Items {
+		if pod.Status.Phase != api.PodSucceeded && pod.Status.Phase != api.PodFailed {
+			currentPods = append(currentPods, pod)
+		}
+	}
+	allPods.Items = currentPods
 	scheduledPods, currentlyNotScheduledPods := getPodsScheduled(allPods)
 	for len(currentlyNotScheduledPods) != 0 {
 		time.Sleep(2 * time.Second)
@@ -155,6 +163,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 	var totalPodCapacity int64
 	var RCName string
 	var ns string
+	ignoreLabels := framework.ImagePullerLabels
 
 	AfterEach(func() {
 		rc, err := c.ReplicationControllers(ns).Get(RCName)
@@ -187,16 +196,16 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 		// Every test case in this suite assumes that cluster add-on pods stay stable and
 		// cannot be run in parallel with any other test that touches Nodes or Pods.
 		// It is so because we need to have precise control on what's running in the cluster.
-		systemPods, err := c.Pods(api.NamespaceSystem).List(api.ListOptions{})
+		systemPods, err := framework.GetPodsInNamespace(c, ns, ignoreLabels)
 		Expect(err).NotTo(HaveOccurred())
 		systemPodsNo = 0
-		for _, pod := range systemPods.Items {
+		for _, pod := range systemPods {
 			if !masterNodes.Has(pod.Spec.NodeName) && pod.DeletionTimestamp == nil {
 				systemPodsNo++
 			}
 		}
 
-		err = framework.WaitForPodsRunningReady(api.NamespaceSystem, int32(systemPodsNo), framework.PodReadyBeforeTimeout, map[string]string{})
+		err = framework.WaitForPodsRunningReady(c, api.NamespaceSystem, int32(systemPodsNo), framework.PodReadyBeforeTimeout, ignoreLabels)
 		Expect(err).NotTo(HaveOccurred())
 
 		for _, node := range nodeList.Items {
@@ -238,7 +247,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  "",
-						Image: "gcr.io/google_containers/pause-amd64:3.0",
+						Image: framework.GetPauseImageName(f.Client),
 					},
 				},
 			},
@@ -257,7 +266,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  podName,
-						Image: "gcr.io/google_containers/pause-amd64:3.0",
+						Image: framework.GetPauseImageName(f.Client),
 					},
 				},
 			},
@@ -315,7 +324,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  "",
-						Image: "gcr.io/google_containers/pause-amd64:3.0",
+						Image: framework.GetPauseImageName(f.Client),
 						Resources: api.ResourceRequirements{
 							Limits: api.ResourceList{
 								"cpu": *resource.NewMilliQuantity(milliCpuPerPod, "DecimalSI"),
@@ -342,7 +351,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  podName,
-						Image: "gcr.io/google_containers/pause-amd64:3.0",
+						Image: framework.GetPauseImageName(f.Client),
 						Resources: api.ResourceRequirements{
 							Limits: api.ResourceList{
 								"cpu": *resource.NewMilliQuantity(milliCpuPerPod, "DecimalSI"),
@@ -382,7 +391,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  podName,
-						Image: "gcr.io/google_containers/pause-amd64:3.0",
+						Image: framework.GetPauseImageName(f.Client),
 					},
 				},
 				NodeSelector: map[string]string{
@@ -425,7 +434,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  podName,
-						Image: "gcr.io/google_containers/pause-amd64:3.0",
+						Image: framework.GetPauseImageName(f.Client),
 					},
 				},
 			},
@@ -461,7 +470,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  podName,
-						Image: "gcr.io/google_containers/pause-amd64:3.0",
+						Image: framework.GetPauseImageName(f.Client),
 					},
 				},
 			},
@@ -499,7 +508,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  labelPodName,
-						Image: "gcr.io/google_containers/pause-amd64:3.0",
+						Image: framework.GetPauseImageName(f.Client),
 					},
 				},
 				NodeSelector: map[string]string{
@@ -563,7 +572,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  podName,
-						Image: "gcr.io/google_containers/pause-amd64:3.0",
+						Image: framework.GetPauseImageName(f.Client),
 					},
 				},
 			},
@@ -598,7 +607,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  podName,
-						Image: "gcr.io/google_containers/pause-amd64:3.0",
+						Image: framework.GetPauseImageName(f.Client),
 					},
 				},
 			},
@@ -654,7 +663,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  labelPodName,
-						Image: "gcr.io/google_containers/pause-amd64:3.0",
+						Image: framework.GetPauseImageName(f.Client),
 					},
 				},
 			},
@@ -692,7 +701,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  podName,
-						Image: "gcr.io/google_containers/pause-amd64:3.0",
+						Image: framework.GetPauseImageName(f.Client),
 					},
 				},
 			},
@@ -771,7 +780,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  podName,
-						Image: "gcr.io/google_containers/pause:2.0",
+						Image: framework.GetPauseImageName(f.Client),
 					},
 				},
 			},
@@ -822,7 +831,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  podName,
-						Image: "gcr.io/google_containers/pause:2.0",
+						Image: framework.GetPauseImageName(f.Client),
 					},
 				},
 			},
@@ -857,7 +866,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  podName,
-						Image: "gcr.io/google_containers/pause:2.0",
+						Image: framework.GetPauseImageName(f.Client),
 					},
 				},
 			},
@@ -910,7 +919,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  labelPodName,
-						Image: "gcr.io/google_containers/pause:2.0",
+						Image: framework.GetPauseImageName(f.Client),
 					},
 				},
 			},
@@ -949,7 +958,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  podName,
-						Image: "gcr.io/google_containers/pause:2.0",
+						Image: framework.GetPauseImageName(f.Client),
 					},
 				},
 			},
@@ -1002,7 +1011,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  labelPodName,
-						Image: "gcr.io/google_containers/pause:2.0",
+						Image: framework.GetPauseImageName(f.Client),
 					},
 				},
 			},
@@ -1037,7 +1046,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  podName,
-						Image: "gcr.io/google_containers/pause:2.0",
+						Image: framework.GetPauseImageName(f.Client),
 					},
 				},
 			},
@@ -1098,7 +1107,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  labelPodName,
-						Image: "gcr.io/google_containers/pause:2.0",
+						Image: framework.GetPauseImageName(f.Client),
 					},
 				},
 			},
@@ -1137,7 +1146,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  podName,
-						Image: "gcr.io/google_containers/pause:2.0",
+						Image: framework.GetPauseImageName(f.Client),
 					},
 				},
 			},
@@ -1201,7 +1210,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  labelPodName,
-						Image: "gcr.io/google_containers/pause:2.0",
+						Image: framework.GetPauseImageName(f.Client),
 					},
 				},
 			},
@@ -1221,7 +1230,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 	})
 
 	// Verify that an escaped JSON string of pod affinity and pod anti affinity in a YAML PodSpec works.
-	It("validates that embedding the JSON PodAffinity and PodAntiAffinity setting as a string in the annotation value work", func() {
+	It("validates that embedding the JSON PodAffinity and PodAntiAffinity setting as a string in the annotation value work [Feature:PodAffinity]", func() {
 		// launch a pod to find a node which can launch a pod. We intentionally do
 		// not just take the node list and choose the first of them. Depending on the
 		// cluster and the scheduler it might be that a "normal" pod cannot be
@@ -1240,7 +1249,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  podName,
-						Image: "gcr.io/google_containers/pause:2.0",
+						Image: framework.GetPauseImageName(f.Client),
 					},
 				},
 			},
@@ -1304,7 +1313,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  podName,
-						Image: "gcr.io/google_containers/pause-amd64:3.0",
+						Image: framework.GetPauseImageName(f.Client),
 					},
 				},
 			},
@@ -1369,7 +1378,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  tolerationPodName,
-						Image: "gcr.io/google_containers/pause-amd64:3.0",
+						Image: framework.GetPauseImageName(f.Client),
 					},
 				},
 			},
@@ -1426,7 +1435,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  podName,
-						Image: "gcr.io/google_containers/pause-amd64:3.0",
+						Image: framework.GetPauseImageName(f.Client),
 					},
 				},
 			},
@@ -1481,7 +1490,7 @@ var _ = framework.KubeDescribe("SchedulerPredicates [Serial]", func() {
 				Containers: []api.Container{
 					{
 						Name:  podNameNoTolerations,
-						Image: "gcr.io/google_containers/pause-amd64:3.0",
+						Image: framework.GetPauseImageName(f.Client),
 					},
 				},
 			},

@@ -32,6 +32,7 @@ import (
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/resource"
 	"k8s.io/kubernetes/pkg/api/testapi"
+	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/client/cache"
 	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/fake"
@@ -252,6 +253,7 @@ func (r *volumeReactor) React(action core.Action) (handled bool, ret runtime.Obj
 		_, found := r.volumes[name]
 		if found {
 			delete(r.volumes, name)
+			r.changedSinceLastSync++
 			return true, nil, nil
 		} else {
 			return true, nil, fmt.Errorf("Cannot delete volume %s: not found", name)
@@ -263,6 +265,7 @@ func (r *volumeReactor) React(action core.Action) (handled bool, ret runtime.Obj
 		_, found := r.volumes[name]
 		if found {
 			delete(r.claims, name)
+			r.changedSinceLastSync++
 			return true, nil, nil
 		} else {
 			return true, nil, fmt.Errorf("Cannot delete claim %s: not found", name)
@@ -357,11 +360,14 @@ func (r *volumeReactor) checkClaims(t *testing.T, expectedClaims []*api.Persiste
 func checkEvents(t *testing.T, expectedEvents []string, ctrl *PersistentVolumeController) error {
 	var err error
 
-	// Read recorded events
+	// Read recorded events - wait up to 1 minute to get all the expected ones
+	// (just in case some goroutines are slower with writing)
+	timer := time.NewTimer(time.Minute)
+
 	fakeRecorder := ctrl.eventRecorder.(*record.FakeRecorder)
 	gotEvents := []string{}
 	finished := false
-	for !finished {
+	for len(gotEvents) < len(expectedEvents) && !finished {
 		select {
 		case event, ok := <-fakeRecorder.Events:
 			if ok {
@@ -371,8 +377,8 @@ func checkEvents(t *testing.T, expectedEvents []string, ctrl *PersistentVolumeCo
 				glog.V(5).Infof("event recorder finished")
 				finished = true
 			}
-		default:
-			glog.V(5).Infof("event recorder finished")
+		case _, _ = <-timer.C:
+			glog.V(5).Infof("event recorder timeout")
 			finished = true
 		}
 	}
@@ -469,6 +475,76 @@ func (r *volumeReactor) waitTest() {
 		}
 		oldChanges = changes
 	}
+}
+
+// deleteVolumeEvent simulates that a volume has been deleted in etcd and
+// the controller receives 'volume deleted' event.
+func (r *volumeReactor) deleteVolumeEvent(volume *api.PersistentVolume) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	// Remove the volume from list of resulting volumes.
+	delete(r.volumes, volume.Name)
+
+	// Generate deletion event. Cloned volume is needed to prevent races (and we
+	// would get a clone from etcd too).
+	clone, _ := conversion.NewCloner().DeepCopy(volume)
+	volumeClone := clone.(*api.PersistentVolume)
+	r.volumeSource.Delete(volumeClone)
+}
+
+// deleteClaimEvent simulates that a claim has been deleted in etcd and the
+// controller receives 'claim deleted' event.
+func (r *volumeReactor) deleteClaimEvent(claim *api.PersistentVolumeClaim) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	// Remove the claim from list of resulting claims.
+	delete(r.claims, claim.Name)
+
+	// Generate deletion event. Cloned volume is needed to prevent races (and we
+	// would get a clone from etcd too).
+	clone, _ := conversion.NewCloner().DeepCopy(claim)
+	claimClone := clone.(*api.PersistentVolumeClaim)
+	r.claimSource.Delete(claimClone)
+}
+
+// addVolumeEvent simulates that a volume has been added in etcd and the
+// controller receives 'volume added' event.
+func (r *volumeReactor) addVolumeEvent(volume *api.PersistentVolume) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	r.volumes[volume.Name] = volume
+	// Generate event. No cloning is needed, this claim is not stored in the
+	// controller cache yet.
+	r.volumeSource.Add(volume)
+}
+
+// modifyVolumeEvent simulates that a volume has been modified in etcd and the
+// controller receives 'volume modified' event.
+func (r *volumeReactor) modifyVolumeEvent(volume *api.PersistentVolume) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	r.volumes[volume.Name] = volume
+	// Generate deletion event. Cloned volume is needed to prevent races (and we
+	// would get a clone from etcd too).
+	clone, _ := conversion.NewCloner().DeepCopy(volume)
+	volumeClone := clone.(*api.PersistentVolume)
+	r.volumeSource.Modify(volumeClone)
+}
+
+// addClaimEvent simulates that a claim has been deleted in etcd and the
+// controller receives 'claim added' event.
+func (r *volumeReactor) addClaimEvent(claim *api.PersistentVolumeClaim) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	r.claims[claim.Name] = claim
+	// Generate event. No cloning is needed, this claim is not stored in the
+	// controller cache yet.
+	r.claimSource.Add(claim)
 }
 
 func newVolumeReactor(client *fake.Clientset, ctrl *PersistentVolumeController, volumeSource, claimSource *framework.FakeControllerSource, errors []reactorError) *volumeReactor {
@@ -573,6 +649,25 @@ func newVolume(name, capacity, boundToClaimUID, boundToClaimName string, phase a
 	}
 
 	return &volume
+}
+
+// withLabels applies the given labels to the first volume in the array and
+// returns the array.  Meant to be used to compose volumes specified inline in
+// a test.
+func withLabels(labels map[string]string, volumes []*api.PersistentVolume) []*api.PersistentVolume {
+	volumes[0].Labels = labels
+	return volumes
+}
+
+// withLabelSelector sets the label selector of the first claim in the array
+// to be MatchLabels of the given label set and returns the array.  Meant
+// to be used to compose claims specified inline in a test.
+func withLabelSelector(labels map[string]string, claims []*api.PersistentVolumeClaim) []*api.PersistentVolumeClaim {
+	claims[0].Spec.Selector = &unversioned.LabelSelector{
+		MatchLabels: labels,
+	}
+
+	return claims
 }
 
 // newVolumeArray returns array with a single volume that would be returned by

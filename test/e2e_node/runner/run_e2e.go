@@ -41,10 +41,12 @@ import (
 var instanceNamePrefix = flag.String("instance-name-prefix", "", "prefix for instance names")
 var zone = flag.String("zone", "", "gce zone the hosts live in")
 var project = flag.String("project", "", "gce project the hosts live in")
+var imageProject = flag.String("image-project", "", "gce project the hosts live in")
 var images = flag.String("images", "", "images to test")
 var hosts = flag.String("hosts", "", "hosts to test")
 var cleanup = flag.Bool("cleanup", true, "If true remove files from remote hosts and delete temporary instances")
 var buildOnly = flag.Bool("build-only", false, "If true, build e2e_node_test.tar.gz and exit.")
+var setupNode = flag.Bool("setup-node", false, "When true, current user will be added to docker group on the test machine")
 
 var computeService *compute.Service
 
@@ -52,6 +54,7 @@ type TestResult struct {
 	output string
 	err    error
 	host   string
+	exitOk bool
 }
 
 func main() {
@@ -69,8 +72,13 @@ func main() {
 	if *images != "" && *zone == "" {
 		glog.Fatal("Must specify --zone flag")
 	}
-	if *images != "" && *project == "" {
-		glog.Fatal("Must specify --project flag")
+	if *images != "" {
+		if *imageProject == "" {
+			glog.Fatal("Must specify --image-project flag")
+		}
+		if *project == "" {
+			glog.Fatal("Must specify --project flag")
+		}
 	}
 	if *instanceNamePrefix == "" {
 		*instanceNamePrefix = "tmp-node-e2e-" + uuid.NewUUID().String()[:8]
@@ -122,13 +130,14 @@ func main() {
 			fmt.Printf("Initializing e2e tests using host %s.\n", host)
 			running++
 			go func(host string, junitFileNum int) {
-				results <- testHost(host, archive, *cleanup, junitFileNum)
+				results <- testHost(host, archive, *cleanup, junitFileNum, *setupNode)
 			}(host, running)
 		}
 	}
 
 	// Wait for all tests to complete and emit the results
 	errCount := 0
+	exitOk := true
 	for i := 0; i < running; i++ {
 		tr := <-results
 		host := tr.host
@@ -139,23 +148,25 @@ func main() {
 		} else {
 			fmt.Printf("Success Finished Host %s Test Suite\n%s\n", host, tr.output)
 		}
+		exitOk = exitOk && tr.exitOk
 		fmt.Printf("%s================================================================%s\n", blue, noColour)
 	}
 
 	// Set the exit code if there were failures
-	if errCount > 0 {
+	if !exitOk {
 		fmt.Printf("Failure: %d errors encountered.", errCount)
 		os.Exit(1)
 	}
 }
 
 // Run tests in archive against host
-func testHost(host, archive string, deleteFiles bool, junitFileNum int) *TestResult {
-	output, err := e2e_node.RunRemote(archive, host, deleteFiles, junitFileNum)
+func testHost(host, archive string, deleteFiles bool, junitFileNum int, setupNode bool) *TestResult {
+	output, exitOk, err := e2e_node.RunRemote(archive, host, deleteFiles, junitFileNum, setupNode)
 	return &TestResult{
 		output: output,
 		err:    err,
 		host:   host,
+		exitOk: exitOk,
 	}
 }
 
@@ -171,7 +182,7 @@ func testImage(image, archive string, junitFileNum int) *TestResult {
 			err: fmt.Errorf("Unable to create gce instance with running docker daemon for image %s.  %v", image, err),
 		}
 	}
-	return testHost(host, archive, false, junitFileNum)
+	return testHost(host, archive, false, junitFileNum, *setupNode)
 }
 
 // Provision a gce instance using image
@@ -249,7 +260,7 @@ func imageToInstanceName(image string) string {
 }
 
 func sourceImage(image string) string {
-	return fmt.Sprintf("projects/%s/global/images/%s", *project, image)
+	return fmt.Sprintf("projects/%s/global/images/%s", *imageProject, image)
 }
 
 func machineType() string {

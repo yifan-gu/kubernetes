@@ -99,12 +99,17 @@ func TestValidateObjectMetaNamespaces(t *testing.T) {
 }
 
 func TestValidateObjectMetaOwnerReferences(t *testing.T) {
+	trueVar := true
+	falseVar := false
 	testCases := []struct {
-		ownerReferences []api.OwnerReference
-		expectError     bool
+		description          string
+		ownerReferences      []api.OwnerReference
+		expectError          bool
+		expectedErrorMessage string
 	}{
 		{
-			[]api.OwnerReference{
+			description: "simple success - third party extension.",
+			ownerReferences: []api.OwnerReference{
 				{
 					APIVersion: "thirdpartyVersion",
 					Kind:       "thirdpartyKind",
@@ -112,11 +117,12 @@ func TestValidateObjectMetaOwnerReferences(t *testing.T) {
 					UID:        "1",
 				},
 			},
-			false,
+			expectError:          false,
+			expectedErrorMessage: "",
 		},
 		{
-			// event shouldn't be set as an owner
-			[]api.OwnerReference{
+			description: "simple failures - event shouldn't be set as an owner",
+			ownerReferences: []api.OwnerReference{
 				{
 					APIVersion: "v1",
 					Kind:       "Event",
@@ -124,7 +130,76 @@ func TestValidateObjectMetaOwnerReferences(t *testing.T) {
 					UID:        "1",
 				},
 			},
-			true,
+			expectError:          true,
+			expectedErrorMessage: "is disallowed from being an owner",
+		},
+		{
+			description: "simple controller ref success - one reference with Controller set",
+			ownerReferences: []api.OwnerReference{
+				{
+					APIVersion: "thirdpartyVersion",
+					Kind:       "thirdpartyKind",
+					Name:       "name",
+					UID:        "1",
+					Controller: &falseVar,
+				},
+				{
+					APIVersion: "thirdpartyVersion",
+					Kind:       "thirdpartyKind",
+					Name:       "name",
+					UID:        "2",
+					Controller: &trueVar,
+				},
+				{
+					APIVersion: "thirdpartyVersion",
+					Kind:       "thirdpartyKind",
+					Name:       "name",
+					UID:        "3",
+					Controller: &falseVar,
+				},
+				{
+					APIVersion: "thirdpartyVersion",
+					Kind:       "thirdpartyKind",
+					Name:       "name",
+					UID:        "4",
+				},
+			},
+			expectError:          false,
+			expectedErrorMessage: "",
+		},
+		{
+			description: "simple controller ref failure - two references with Controller set",
+			ownerReferences: []api.OwnerReference{
+				{
+					APIVersion: "thirdpartyVersion",
+					Kind:       "thirdpartyKind",
+					Name:       "name",
+					UID:        "1",
+					Controller: &falseVar,
+				},
+				{
+					APIVersion: "thirdpartyVersion",
+					Kind:       "thirdpartyKind",
+					Name:       "name",
+					UID:        "2",
+					Controller: &trueVar,
+				},
+				{
+					APIVersion: "thirdpartyVersion",
+					Kind:       "thirdpartyKind",
+					Name:       "name",
+					UID:        "3",
+					Controller: &trueVar,
+				},
+				{
+					APIVersion: "thirdpartyVersion",
+					Kind:       "thirdpartyKind",
+					Name:       "name",
+					UID:        "4",
+				},
+			},
+			expectError:          true,
+			expectedErrorMessage: "Only one reference can have Controller set to true",
 		},
 	}
 
@@ -137,13 +212,13 @@ func TestValidateObjectMetaOwnerReferences(t *testing.T) {
 			},
 			field.NewPath("field"))
 		if len(errs) != 0 && !tc.expectError {
-			t.Errorf("unexpected error: %v", errs)
+			t.Errorf("unexpected error: %v in test case %v", errs, tc.description)
 		}
 		if len(errs) == 0 && tc.expectError {
-			t.Errorf("expect error")
+			t.Errorf("expect error in test case %v", tc.description)
 		}
-		if len(errs) != 0 && !strings.Contains(errs[0].Error(), "is disallowed from being an owner") {
-			t.Errorf("unexpected error message: %v", errs)
+		if len(errs) != 0 && !strings.Contains(errs[0].Error(), tc.expectedErrorMessage) {
+			t.Errorf("unexpected error message: %v in test case %v", errs, tc.description)
 		}
 	}
 }
@@ -264,21 +339,6 @@ func TestValidateObjectMetaTrimsTrailingSlash(t *testing.T) {
 		field.NewPath("field"))
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
-	}
-}
-
-// Ensure updating finalizers is disallowed
-func TestValidateObjectMetaUpdateDisallowsUpdatingFinalizers(t *testing.T) {
-	errs := ValidateObjectMetaUpdate(
-		&api.ObjectMeta{Name: "test", ResourceVersion: "1", Finalizers: []string{"orphaning"}},
-		&api.ObjectMeta{Name: "test", ResourceVersion: "1"},
-		field.NewPath("field"),
-	)
-	if len(errs) != 1 {
-		t.Fatalf("unexpected errors: %v", errs)
-	}
-	if !strings.Contains(errs[0].Error(), "field is immutable") {
-		t.Errorf("unexpected error message: %v", errs)
 	}
 }
 
@@ -474,6 +534,37 @@ func TestValidatePersistentVolumeClaim(t *testing.T) {
 		"good-claim": {
 			isExpectedFailure: false,
 			claim: testVolumeClaim("foo", "ns", api.PersistentVolumeClaimSpec{
+				Selector: &unversioned.LabelSelector{
+					MatchExpressions: []unversioned.LabelSelectorRequirement{
+						{
+							Key:      "key2",
+							Operator: "Exists",
+						},
+					},
+				},
+				AccessModes: []api.PersistentVolumeAccessMode{
+					api.ReadWriteOnce,
+					api.ReadOnlyMany,
+				},
+				Resources: api.ResourceRequirements{
+					Requests: api.ResourceList{
+						api.ResourceName(api.ResourceStorage): resource.MustParse("10G"),
+					},
+				},
+			}),
+		},
+		"invalid-label-selector": {
+			isExpectedFailure: true,
+			claim: testVolumeClaim("foo", "ns", api.PersistentVolumeClaimSpec{
+				Selector: &unversioned.LabelSelector{
+					MatchExpressions: []unversioned.LabelSelectorRequirement{
+						{
+							Key:      "key2",
+							Operator: "InvalidOp",
+							Values:   []string{"value1", "value2"},
+						},
+					},
+				},
 				AccessModes: []api.PersistentVolumeAccessMode{
 					api.ReadWriteOnce,
 					api.ReadOnlyMany,
@@ -3487,6 +3578,7 @@ func TestValidateService(t *testing.T) {
 		{
 			name: "valid LoadBalancer source range annotation",
 			tweakSvc: func(s *api.Service) {
+				s.Spec.Type = api.ServiceTypeLoadBalancer
 				s.Annotations[service.AnnotationLoadBalancerSourceRangesKey] = "1.2.3.4/8,  5.6.7.8/16"
 			},
 			numErrs: 0,
@@ -3494,6 +3586,7 @@ func TestValidateService(t *testing.T) {
 		{
 			name: "empty LoadBalancer source range annotation",
 			tweakSvc: func(s *api.Service) {
+				s.Spec.Type = api.ServiceTypeLoadBalancer
 				s.Annotations[service.AnnotationLoadBalancerSourceRangesKey] = ""
 			},
 			numErrs: 0,
@@ -3503,12 +3596,44 @@ func TestValidateService(t *testing.T) {
 			tweakSvc: func(s *api.Service) {
 				s.Annotations[service.AnnotationLoadBalancerSourceRangesKey] = "foo.bar"
 			},
-			numErrs: 1,
+			numErrs: 2,
 		},
 		{
 			name: "invalid LoadBalancer source range annotation (invalid CIDR)",
 			tweakSvc: func(s *api.Service) {
+				s.Spec.Type = api.ServiceTypeLoadBalancer
 				s.Annotations[service.AnnotationLoadBalancerSourceRangesKey] = "1.2.3.4/33"
+			},
+			numErrs: 1,
+		},
+		{
+			name: "invalid source range for non LoadBalancer type service",
+			tweakSvc: func(s *api.Service) {
+				s.Spec.LoadBalancerSourceRanges = []string{"1.2.3.4/8", "5.6.7.8/16"}
+			},
+			numErrs: 1,
+		},
+		{
+			name: "valid LoadBalancer source range",
+			tweakSvc: func(s *api.Service) {
+				s.Spec.Type = api.ServiceTypeLoadBalancer
+				s.Spec.LoadBalancerSourceRanges = []string{"1.2.3.4/8", "5.6.7.8/16"}
+			},
+			numErrs: 0,
+		},
+		{
+			name: "empty LoadBalancer source range",
+			tweakSvc: func(s *api.Service) {
+				s.Spec.Type = api.ServiceTypeLoadBalancer
+				s.Spec.LoadBalancerSourceRanges = []string{"   "}
+			},
+			numErrs: 1,
+		},
+		{
+			name: "invalid LoadBalancer source range",
+			tweakSvc: func(s *api.Service) {
+				s.Spec.Type = api.ServiceTypeLoadBalancer
+				s.Spec.LoadBalancerSourceRanges = []string{"foo.bar"}
 			},
 			numErrs: 1,
 		},

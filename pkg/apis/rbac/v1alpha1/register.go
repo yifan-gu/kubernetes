@@ -18,13 +18,14 @@ package v1alpha1
 
 import (
 	"k8s.io/kubernetes/pkg/api/unversioned"
+	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/pkg/apis/rbac"
 	"k8s.io/kubernetes/pkg/runtime"
 	"k8s.io/kubernetes/pkg/watch/versioned"
 )
 
 // SchemeGroupVersion is group version used to register these objects
-var SchemeGroupVersion = unversioned.GroupVersion{Group: rbac.GroupName, Version: "v1alpha"}
+var SchemeGroupVersion = unversioned.GroupVersion{Group: rbac.GroupName, Version: "v1alpha1"}
 
 func AddToScheme(scheme *runtime.Scheme) {
 	addKnownTypes(scheme)
@@ -42,6 +43,10 @@ func addKnownTypes(scheme *runtime.Scheme) {
 		&ClusterRoleBinding{},
 		&ClusterRoleBindingList{},
 		&ClusterRoleList{},
+
+		&v1.ListOptions{},
+		&v1.DeleteOptions{},
+		&v1.ExportOptions{},
 	)
 	versioned.AddToGroupVersion(scheme, SchemeGroupVersion)
 }

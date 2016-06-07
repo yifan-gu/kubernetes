@@ -176,7 +176,7 @@ kube::util::find-binary() {
   echo -n "${bin}"
 }
 
-# Run all known doc generators (today gendocs, genman, and genbashcomp for kubectl)
+# Run all known doc generators (today gendocs and genman for kubectl)
 # $1 is the directory to put those generated documents
 kube::util::gen-docs() {
   local dest="$1"
@@ -186,7 +186,7 @@ kube::util::gen-docs() {
   genkubedocs=$(kube::util::find-binary "genkubedocs")
   genman=$(kube::util::find-binary "genman")
   genyaml=$(kube::util::find-binary "genyaml")
-  genbashcomp=$(kube::util::find-binary "genbashcomp")
+  genfeddocs=$(kube::util::find-binary "genfeddocs")
 
   mkdir -p "${dest}/docs/user-guide/kubectl/"
   "${gendocs}" "${dest}/docs/user-guide/kubectl/"
@@ -196,12 +196,12 @@ kube::util::gen-docs() {
   "${genkubedocs}" "${dest}/docs/admin/" "kube-proxy"
   "${genkubedocs}" "${dest}/docs/admin/" "kube-scheduler"
   "${genkubedocs}" "${dest}/docs/admin/" "kubelet"
+  "${genfeddocs}" "${dest}/docs/admin/" "federation-apiserver"
+  "${genfeddocs}" "${dest}/docs/admin/" "federation-controller-manager"
   mkdir -p "${dest}/docs/man/man1/"
   "${genman}" "${dest}/docs/man/man1/"
   mkdir -p "${dest}/docs/yaml/kubectl/"
   "${genyaml}" "${dest}/docs/yaml/kubectl/"
-  mkdir -p "${dest}/contrib/completions/bash/"
-  "${genbashcomp}" "${dest}/contrib/completions/bash/"
 
   # create the list of generated files
   pushd "${dest}" > /dev/null
@@ -330,8 +330,9 @@ kube::util::git_upstream_remote_name() {
 kube::util::has_changes_against_upstream_branch() {
   local -r git_branch=$1
   local -r pattern=$2
+  local full_branch
 
-  readonly full_branch="$(kube::util::git_upstream_remote_name)/${git_branch}"
+  full_branch="$(kube::util::git_upstream_remote_name)/${git_branch}"
   echo "Checking for '${pattern}' changes against '${full_branch}'"
   # make sure the branch is valid, otherwise the check will pass erroneously.
   if ! git describe "${full_branch}" >/dev/null; then

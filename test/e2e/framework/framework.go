@@ -19,18 +19,18 @@ package framework
 import (
 	"bytes"
 	"fmt"
+	"io/ioutil"
 	"reflect"
 	"strings"
 	"sync"
 	"time"
 
+	unversionedfederation "k8s.io/kubernetes/federation/client/clientset_generated/federation_internalclientset/typed/federation/unversioned"
 	"k8s.io/kubernetes/pkg/api"
 	apierrs "k8s.io/kubernetes/pkg/api/errors"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/release_1_2"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/release_1_3"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
-	adapter_1_2 "k8s.io/kubernetes/pkg/client/unversioned/adapters/release_1_2"
-	adapter_1_3 "k8s.io/kubernetes/pkg/client/unversioned/adapters/release_1_3"
 	"k8s.io/kubernetes/pkg/fields"
 	"k8s.io/kubernetes/pkg/labels"
 	"k8s.io/kubernetes/pkg/metrics"
@@ -39,6 +39,7 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	yaml "gopkg.in/yaml.v2"
 )
 
 const (
@@ -53,6 +54,8 @@ type Framework struct {
 	Client        *client.Client
 	Clientset_1_2 *release_1_2.Clientset
 	Clientset_1_3 *release_1_3.Clientset
+
+	FederationClient *unversionedfederation.FederationClient
 
 	Namespace                *api.Namespace   // Every test has at least one namespace
 	namespacesToDelete       []*api.Namespace // Some tests have more than one.
@@ -75,6 +78,9 @@ type Framework struct {
 
 	// configuration for framework's client
 	options FrameworkOptions
+
+	// will this framework exercise a federated cluster as well
+	federated bool
 }
 
 type TestDataSummary interface {
@@ -97,6 +103,12 @@ func NewDefaultFramework(baseName string) *Framework {
 	return NewFramework(baseName, options, nil)
 }
 
+func NewDefaultFederatedFramework(baseName string) *Framework {
+	f := NewDefaultFramework(baseName)
+	f.federated = true
+	return f
+}
+
 func NewFramework(baseName string, options FrameworkOptions, client *client.Client) *Framework {
 	f := &Framework{
 		BaseName:                 baseName,
@@ -116,7 +128,6 @@ func (f *Framework) BeforeEach() {
 	// The fact that we need this feels like a bug in ginkgo.
 	// https://github.com/onsi/ginkgo/issues/222
 	f.cleanupHandle = AddCleanupAction(f.AfterEach)
-
 	if f.Client == nil {
 		By("Creating a kubernetes client")
 		config, err := LoadConfig()
@@ -129,9 +140,18 @@ func (f *Framework) BeforeEach() {
 		c, err := loadClientFromConfig(config)
 		Expect(err).NotTo(HaveOccurred())
 		f.Client = c
+		f.Clientset_1_2, err = release_1_2.NewForConfig(config)
+		Expect(err).NotTo(HaveOccurred())
+		f.Clientset_1_3, err = release_1_3.NewForConfig(config)
+		Expect(err).NotTo(HaveOccurred())
 	}
-	f.Clientset_1_2 = adapter_1_2.FromUnversionedClient(f.Client)
-	f.Clientset_1_3 = adapter_1_3.FromUnversionedClient(f.Client)
+
+	if f.federated && f.FederationClient == nil {
+		By("Creating a federated kubernetes client")
+		var err error
+		f.FederationClient, err = LoadFederationClient()
+		Expect(err).NotTo(HaveOccurred())
+	}
 
 	By("Building a namespace api object")
 	namespace, err := f.CreateNamespace(f.BaseName, map[string]string{
@@ -205,6 +225,18 @@ func (f *Framework) AfterEach() {
 		f.Namespace = nil
 		f.Client = nil
 	}()
+
+	if f.federated {
+		defer func() {
+			if f.FederationClient == nil {
+				Logf("Warning: framework is marked federated, but has no FederationClient")
+				return
+			}
+			if err := f.FederationClient.Clusters().DeleteCollection(nil, api.ListOptions{}); err != nil {
+				Logf("Error: failed to delete Clusters: %+v", err)
+			}
+		}()
+	}
 
 	// Print events if the test failed.
 	if CurrentGinkgoTestDescription().Failed && TestContext.DumpLogsOnFailure {
@@ -465,6 +497,97 @@ func (f *Framework) CreatePodsPerNodeForSimpleApp(appName string, podSpec func(n
 	return labels
 }
 
+type KubeUser struct {
+	Name string `yaml:"name"`
+	User struct {
+		Username string `yaml:"username"`
+		Password string `yaml:"password"`
+		Token    string `yaml:"token"`
+	} `yaml:"user"`
+}
+
+type KubeCluster struct {
+	Name    string `yaml:"name"`
+	Cluster struct {
+		CertificateAuthorityData string `yaml:"certificate-authority-data"`
+		Server                   string `yaml:"server"`
+	} `yaml:"cluster"`
+}
+
+type KubeConfig struct {
+	Contexts []struct {
+		Name    string `yaml:"name"`
+		Context struct {
+			Cluster string `yaml:"cluster"`
+			User    string
+		} `yaml:"context"`
+	} `yaml:"contexts"`
+
+	Clusters []KubeCluster `yaml:"clusters"`
+
+	Users []KubeUser `yaml:"users"`
+}
+
+func (kc *KubeConfig) findUser(name string) *KubeUser {
+	for _, user := range kc.Users {
+		if user.Name == name {
+			return &user
+		}
+	}
+	return nil
+}
+
+func (kc *KubeConfig) findCluster(name string) *KubeCluster {
+	for _, cluster := range kc.Clusters {
+		if cluster.Name == name {
+			return &cluster
+		}
+	}
+	return nil
+}
+
+type E2EContext struct {
+	Name    string       `yaml:"name"`
+	Cluster *KubeCluster `yaml:"cluster"`
+	User    *KubeUser    `yaml:"user"`
+}
+
+func (f *Framework) GetUnderlyingFederatedContexts() []E2EContext {
+	if !f.federated {
+		Failf("geUnderlyingFederatedContexts called on non-federated framework")
+	}
+
+	kubeconfig := KubeConfig{}
+	configBytes, err := ioutil.ReadFile(TestContext.KubeConfig)
+	ExpectNoError(err)
+	err = yaml.Unmarshal(configBytes, &kubeconfig)
+	ExpectNoError(err)
+
+	e2eContexts := []E2EContext{}
+	for _, context := range kubeconfig.Contexts {
+		if strings.HasPrefix(context.Name, "federation-e2e") {
+
+			user := kubeconfig.findUser(context.Context.User)
+			if user == nil {
+				Failf("Could not find user for context %+v", context)
+			}
+
+			cluster := kubeconfig.findCluster(context.Context.Cluster)
+			if cluster == nil {
+				Failf("Could not find cluster for context %+v", context)
+			}
+
+			e2eContexts = append(e2eContexts, E2EContext{
+				Name:    context.Name,
+				Cluster: cluster,
+				User:    user,
+			})
+		}
+	}
+
+	return e2eContexts
+}
+
 func kubectlExecWithRetry(namespace string, podName, containerName string, args ...string) ([]byte, []byte, error) {
 	for numRetries := 0; numRetries < maxKubectlExecRetries; numRetries++ {
 		if numRetries > 0 {
@@ -505,7 +628,7 @@ func kubectlExec(namespace string, podName, containerName string, args ...string
 	cmd := KubectlCmd(cmdArgs...)
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 
-	Logf("Running '%s %s'", cmd.Path, strings.Join(cmd.Args, " "))
+	Logf("Running '%s %s'", cmd.Path, strings.Join(cmdArgs, " "))
 	err := cmd.Run()
 	return stdout.Bytes(), stderr.Bytes(), err
 }

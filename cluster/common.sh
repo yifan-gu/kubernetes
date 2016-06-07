@@ -38,7 +38,6 @@ KUBE_RELEASE_VERSION_REGEX="^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*
 # kube::release::parse_and_validate_ci_version()
 KUBE_CI_VERSION_REGEX="^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)-(beta|alpha)\\.(0|[1-9][0-9]*)(\\.(0|[1-9][0-9]*)\\+[-0-9a-z]*)?$"
 
-
 # Generate kubeconfig data for the created cluster.
 # Assumed vars:
 #   KUBE_USER
@@ -50,12 +49,23 @@ KUBE_CI_VERSION_REGEX="^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)-(be
 # If the apiserver supports bearer auth, also provide:
 #   KUBE_BEARER_TOKEN
 #
+# If the kubeconfig context being created should NOT be set as the current context
+# SECONDARY_KUBECONFIG=true
+#
+# To explicitly name the context being created, use OVERRIDE_CONTEXT
+#
 # The following can be omitted for --insecure-skip-tls-verify
 #   KUBE_CERT
 #   KUBE_KEY
 #   CA_CERT
 function create-kubeconfig() {
   local kubectl="${KUBE_ROOT}/cluster/kubectl.sh"
+  SECONDARY_KUBECONFIG=${SECONDARY_KUBECONFIG:-}
+  OVERRIDE_CONTEXT=${OVERRIDE_CONTEXT:-}
+
+  if [[ "$OVERRIDE_CONTEXT" != "" ]];then
+      CONTEXT=$OVERRIDE_CONTEXT
+  fi
 
   export KUBECONFIG=${KUBECONFIG:-$DEFAULT_KUBECONFIG}
   # KUBECONFIG determines the file we write to, but it may not exist yet
@@ -99,7 +109,10 @@ function create-kubeconfig() {
     "${kubectl}" config set-credentials "${CONTEXT}" "${user_args[@]}"
   fi
   "${kubectl}" config set-context "${CONTEXT}" --cluster="${CONTEXT}" --user="${CONTEXT}"
-  "${kubectl}" config use-context "${CONTEXT}"  --cluster="${CONTEXT}"
+
+  if [[ "${SECONDARY_KUBECONFIG}" != "true" ]];then
+      "${kubectl}" config use-context "${CONTEXT}"  --cluster="${CONTEXT}"
+  fi
 
   # If we have a bearer token, also create a credential entry with basic auth
   # so that it is easy to discover the basic auth password for your cluster
@@ -482,6 +495,7 @@ SERVICE_CLUSTER_IP_RANGE: $(yaml-quote ${SERVICE_CLUSTER_IP_RANGE})
 KUBERNETES_MASTER_NAME: $(yaml-quote ${MASTER_NAME})
 ALLOCATE_NODE_CIDRS: $(yaml-quote ${ALLOCATE_NODE_CIDRS:-false})
 ENABLE_CLUSTER_MONITORING: $(yaml-quote ${ENABLE_CLUSTER_MONITORING:-none})
+DOCKER_REGISTRY_MIRROR_URL: $(yaml-quote ${DOCKER_REGISTRY_MIRROR_URL:-})
 ENABLE_L7_LOADBALANCING: $(yaml-quote ${ENABLE_L7_LOADBALANCING:-none})
 ENABLE_CLUSTER_LOGGING: $(yaml-quote ${ENABLE_CLUSTER_LOGGING:-false})
 ENABLE_CLUSTER_UI: $(yaml-quote ${ENABLE_CLUSTER_UI:-false})

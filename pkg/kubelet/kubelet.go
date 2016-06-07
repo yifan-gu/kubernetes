@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -91,6 +92,7 @@ import (
 	"k8s.io/kubernetes/pkg/util/wait"
 	"k8s.io/kubernetes/pkg/version"
 	"k8s.io/kubernetes/pkg/volume"
+	attachdetachutil "k8s.io/kubernetes/pkg/volume/util/attachdetach"
 	"k8s.io/kubernetes/pkg/watch"
 	"k8s.io/kubernetes/plugin/pkg/scheduler/algorithm/predicates"
 	"k8s.io/kubernetes/plugin/pkg/scheduler/schedulercache"
@@ -177,6 +179,7 @@ func NewMainKubelet(
 	dockerClient dockertools.DockerInterface,
 	kubeClient clientset.Interface,
 	rootDirectory string,
+	seccompProfileRoot string,
 	podInfraContainerImage string,
 	resyncInterval time.Duration,
 	pullQPS float32,
@@ -215,6 +218,7 @@ func NewMainKubelet(
 	podCIDR string,
 	reconcileCIDR bool,
 	maxPods int,
+	podsPerCore int,
 	nvidiaGPUs int,
 	dockerExecHandler dockertools.ExecHandler,
 	resolverConfig string,
@@ -234,6 +238,7 @@ func NewMainKubelet(
 	babysitDaemons bool,
 	evictionConfig eviction.Config,
 	kubeOptions []Option,
+	enableControllerAttachDetach bool,
 ) (*Kubelet, error) {
 	if rootDirectory == "" {
 		return nil, fmt.Errorf("invalid root directory %q", rootDirectory)
@@ -342,6 +347,7 @@ func NewMainKubelet(
 		nonMasqueradeCIDR:          nonMasqueradeCIDR,
 		reconcileCIDR:              reconcileCIDR,
 		maxPods:                    maxPods,
+		podsPerCore:                podsPerCore,
 		nvidiaGPUs:                 nvidiaGPUs,
 		syncLoopMonitor:            atomic.Value{},
 		resolverConfig:             resolverConfig,
@@ -349,16 +355,18 @@ func NewMainKubelet(
 		daemonEndpoints:            daemonEndpoints,
 		containerManager:           containerManager,
 		flannelExperimentalOverlay: flannelExperimentalOverlay,
-		flannelHelper:              NewFlannelHelper(),
+		flannelHelper:              nil,
 		nodeIP:                     nodeIP,
 		clock:                      util.RealClock{},
 		outOfDiskTransitionFrequency: outOfDiskTransitionFrequency,
 		reservation:                  reservation,
 		enableCustomMetrics:          enableCustomMetrics,
 		babysitDaemons:               babysitDaemons,
+		enableControllerAttachDetach: enableControllerAttachDetach,
 	}
 
 	if klet.flannelExperimentalOverlay {
+		klet.flannelHelper = NewFlannelHelper()
 		glog.Infof("Flannel is in charge of podCIDR and overlay networking.")
 	}
 	if klet.nodeIP != nil {
@@ -423,6 +431,7 @@ func NewMainKubelet(
 			serializeImagePulls,
 			enableCustomMetrics,
 			klet.hairpinMode == componentconfig.HairpinVeth,
+			seccompProfileRoot,
 			containerRuntimeOptions...,
 		)
 	case "rkt":
@@ -440,7 +449,6 @@ func NewMainKubelet(
 			containerRefManager,
 			klet.podManager,
 			klet.livenessManager,
-			klet.volumeManager,
 			klet.httpClient,
 			klet.networkPlugin,
 			klet.hairpinMode == componentconfig.HairpinVeth,
@@ -815,6 +823,14 @@ type Kubelet struct {
 
 	// the list of handlers to call during pod sync.
 	lifecycle.PodSyncHandlers
+
+	// the number of allowed pods per core
+	podsPerCore int
+
+	// enableControllerAttachDetach indicates the Attach/Detach controller
+	// should manage attachment/detachment of volumes scheduled to this node,
+	// and disable kubelet from executing any attach/detach operations
+	enableControllerAttachDetach bool
 }
 
 // Validate given node IP belongs to the current host
@@ -920,7 +936,7 @@ func (kl *Kubelet) initializeModules() error {
 
 	// Step 3: If the container logs directory does not exist, create it.
 	if _, err := os.Stat(containerLogsDir); err != nil {
-		if err := kl.os.Mkdir(containerLogsDir, 0755); err != nil {
+		if err := kl.os.MkdirAll(containerLogsDir, 0755); err != nil {
 			glog.Errorf("Failed to create directory %q: %v", containerLogsDir, err)
 		}
 	}
@@ -1011,6 +1027,24 @@ func (kl *Kubelet) initialNodeStatus() (*api.Node, error) {
 			Unschedulable: !kl.registerSchedulable,
 		},
 	}
+	// Initially, set NodeNetworkUnavailable to true.
+	if kl.providerRequiresNetworkingConfiguration() {
+		node.Status.Conditions = append(node.Status.Conditions, api.NodeCondition{
+			Type:               api.NodeNetworkUnavailable,
+			Status:             api.ConditionTrue,
+			Reason:             "NoRouteCreated",
+			Message:            "Node created without a route",
+			LastTransitionTime: unversioned.NewTime(kl.clock.Now()),
+		})
+	}
+
+	if kl.enableControllerAttachDetach {
+		if node.Annotations == nil {
+			node.Annotations = make(map[string]string)
+		}
+
+		node.Annotations[attachdetachutil.ControllerManagedAnnotation] = "true"
+	}
 
 	// @question: should this be place after the call to the cloud provider? which also applies labels
 	for k, v := range kl.nodeLabels {
@@ -1069,11 +1103,24 @@ func (kl *Kubelet) initialNodeStatus() (*api.Node, error) {
 		}
 	} else {
 		node.Spec.ExternalID = kl.hostname
+		// If no cloud provider is defined - use the one detected by cadvisor
+		info, err := kl.GetCachedMachineInfo()
+		if err == nil {
+			kl.updateCloudProviderFromMachineInfo(node, info)
+		}
 	}
 	if err := kl.setNodeStatus(node); err != nil {
 		return nil, err
 	}
 	return node, nil
+}
+
+func (kl *Kubelet) providerRequiresNetworkingConfiguration() bool {
+	if kl.cloud == nil || kl.flannelExperimentalOverlay {
+		return false
+	}
+	_, supported := kl.cloud.Routes()
+	return supported
 }
 
 // registerWithApiserver registers the node with the cluster master. It is safe
@@ -1708,13 +1755,13 @@ func (kl *Kubelet) killPod(pod *api.Pod, runningPod *kubecontainer.Pod, status *
 // makePodDataDirs creates the dirs for the pod datas.
 func (kl *Kubelet) makePodDataDirs(pod *api.Pod) error {
 	uid := pod.UID
-	if err := os.Mkdir(kl.getPodDir(uid), 0750); err != nil && !os.IsExist(err) {
+	if err := os.MkdirAll(kl.getPodDir(uid), 0750); err != nil && !os.IsExist(err) {
 		return err
 	}
-	if err := os.Mkdir(kl.getPodVolumesDir(uid), 0750); err != nil && !os.IsExist(err) {
+	if err := os.MkdirAll(kl.getPodVolumesDir(uid), 0750); err != nil && !os.IsExist(err) {
 		return err
 	}
-	if err := os.Mkdir(kl.getPodPluginsDir(uid), 0750); err != nil && !os.IsExist(err) {
+	if err := os.MkdirAll(kl.getPodPluginsDir(uid), 0750); err != nil && !os.IsExist(err) {
 		return err
 	}
 	return nil
@@ -2079,7 +2126,11 @@ func (kl *Kubelet) cleanupOrphanedVolumes(pods []*api.Pod, runningPods []*kubeco
 
 			// volume is unmounted.  some volumes also require detachment from the node.
 			if cleaner.Detacher != nil && len(refs) == 1 {
-
+				// There is a bug in this code, where len(refs) is zero in some
+				// cases, and so RemoveVolumeInUse sometimes never gets called.
+				// The Attach/Detach Refactor should fix this, in the mean time,
+				// the controller timeout for safe mount is set to 3 minutes, so
+				// it will still detach the volume.
 				detacher := *cleaner.Detacher
 				devicePath, _, err := mount.GetDeviceNameFromMount(kl.mounter, refs[0])
 				if err != nil {
@@ -2091,9 +2142,19 @@ func (kl *Kubelet) cleanupOrphanedVolumes(pods []*api.Pod, runningPods []*kubeco
 				}
 
 				pdName := path.Base(refs[0])
-				err = detacher.Detach(pdName, kl.hostname)
-				if err != nil {
-					glog.Errorf("Could not detach volume %q at %q: %v", name, volumePath, err)
+				if kl.enableControllerAttachDetach {
+					// Attach/Detach controller is enabled and this volume type
+					// implments a detacher
+					uniqueDeviceName := attachdetachutil.GetUniqueDeviceName(
+						cleaner.PluginName, pdName)
+					kl.volumeManager.RemoveVolumeInUse(
+						api.UniqueDeviceName(uniqueDeviceName))
+				} else {
+					// Attach/Detach controller is disabled
+					err = detacher.Detach(pdName, kl.hostname)
+					if err != nil {
+						glog.Errorf("Could not detach volume %q at %q: %v", name, volumePath, err)
+					}
 				}
 
 				go func() {
@@ -3028,6 +3089,18 @@ func (kl *Kubelet) setNodeAddress(node *api.Node) error {
 	return nil
 }
 
+func (kl *Kubelet) updateCloudProviderFromMachineInfo(node *api.Node, info *cadvisorapi.MachineInfo) {
+	if info.CloudProvider != cadvisorapi.UnknownProvider &&
+		info.CloudProvider != cadvisorapi.Baremetal {
+		// The cloud providers from pkg/cloudprovider/providers/* that update ProviderID
+		// will use the format of cloudprovider://project/availability_zone/instance_name
+		// here we only have the cloudprovider and the instance name so we leave project
+		// and availability zone empty for compatibility.
+		node.Spec.ProviderID = strings.ToLower(string(info.CloudProvider)) +
+			":////" + string(info.InstanceID)
+	}
+}
+
 func (kl *Kubelet) setNodeStatusMachineInfo(node *api.Node) {
 	// TODO: Post NotReady if we cannot get MachineInfo from cAdvisor. This needs to start
 	// cAdvisor locally, e.g. for test-cmd.sh, and in integration test.
@@ -3046,8 +3119,13 @@ func (kl *Kubelet) setNodeStatusMachineInfo(node *api.Node) {
 		node.Status.NodeInfo.MachineID = info.MachineID
 		node.Status.NodeInfo.SystemUUID = info.SystemUUID
 		node.Status.Capacity = cadvisor.CapacityFromMachineInfo(info)
-		node.Status.Capacity[api.ResourcePods] = *resource.NewQuantity(
-			int64(kl.maxPods), resource.DecimalSI)
+		if kl.podsPerCore > 0 {
+			node.Status.Capacity[api.ResourcePods] = *resource.NewQuantity(
+				int64(math.Min(float64(info.NumCores*kl.podsPerCore), float64(kl.maxPods))), resource.DecimalSI)
+		} else {
+			node.Status.Capacity[api.ResourcePods] = *resource.NewQuantity(
+				int64(kl.maxPods), resource.DecimalSI)
+		}
 		node.Status.Capacity[api.ResourceNvidiaGPU] = *resource.NewQuantity(
 			int64(kl.nvidiaGPUs), resource.DecimalSI)
 		if node.Status.NodeInfo.BootID != "" &&
@@ -3349,6 +3427,11 @@ func (kl *Kubelet) recordNodeSchedulableEvent(node *api.Node) {
 	}
 }
 
+// Update VolumesInUse field in Node Status
+func (kl *Kubelet) setNodeVolumesInUseStatus(node *api.Node) {
+	node.Status.VolumesInUse = kl.volumeManager.GetVolumesInUse()
+}
+
 // setNodeStatus fills in the Status fields of the given Node, overwriting
 // any fields that are currently set.
 // TODO(madhusudancs): Simplify the logic for setting node conditions and
@@ -3377,6 +3460,7 @@ func (kl *Kubelet) defaultNodeStatusFuncs() []func(*api.Node) error {
 		withoutError(kl.setNodeOODCondition),
 		withoutError(kl.setNodeMemoryPressureCondition),
 		withoutError(kl.setNodeReadyCondition),
+		withoutError(kl.setNodeVolumesInUseStatus),
 		withoutError(kl.recordNodeSchedulableEvent),
 	}
 }
@@ -3398,6 +3482,7 @@ func (kl *Kubelet) tryUpdateNodeStatus() error {
 	if node == nil {
 		return fmt.Errorf("no node instance returned for %q", kl.nodeName)
 	}
+
 	// Flannel is the authoritative source of pod CIDR, if it's running.
 	// This is a short term compromise till we get flannel working in
 	// reservation mode.

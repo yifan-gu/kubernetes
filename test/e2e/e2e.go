@@ -103,14 +103,18 @@ func setupProviderConfig() error {
 var _ = ginkgo.SynchronizedBeforeSuite(func() []byte {
 	// Run only on Ginkgo node 1
 
+	if err := setupProviderConfig(); err != nil {
+		framework.Failf("Failed to setup provider config: %v", err)
+	}
+
+	c, err := framework.LoadClient()
+	if err != nil {
+		glog.Fatal("Error loading client: ", err)
+	}
+
 	// Delete any namespaces except default and kube-system. This ensures no
 	// lingering resources are left over from a previous test run.
 	if framework.TestContext.CleanStart {
-		c, err := framework.LoadClient()
-		if err != nil {
-			glog.Fatal("Error loading client: ", err)
-		}
-
 		deleted, err := framework.DeleteNamespaces(c, nil /* deleteFilter */, []string{api.NamespaceSystem, api.NamespaceDefault})
 		if err != nil {
 			framework.Failf("Error deleting orphaned namespaces: %v", err)
@@ -125,18 +129,14 @@ var _ = ginkgo.SynchronizedBeforeSuite(func() []byte {
 	// cluster infrastructure pods that are being pulled or started can block
 	// test pods from running, and tests that ensure all pods are running and
 	// ready will fail).
-	if err := framework.WaitForPodsRunningReady(api.NamespaceSystem, int32(framework.TestContext.MinStartupPods), podStartupTimeout, framework.ImagePullerLabels); err != nil {
-		if c, errClient := framework.LoadClient(); errClient != nil {
-			framework.Logf("Unable to dump cluster information because: %v", errClient)
-		} else {
-			framework.DumpAllNamespaceInfo(c, api.NamespaceSystem)
-		}
-		framework.LogFailedContainers(api.NamespaceSystem)
-		framework.RunKubernetesServiceTestContainer(framework.TestContext.RepoRoot, api.NamespaceDefault)
+	if err := framework.WaitForPodsRunningReady(c, api.NamespaceSystem, int32(framework.TestContext.MinStartupPods), podStartupTimeout, framework.ImagePullerLabels); err != nil {
+		framework.DumpAllNamespaceInfo(c, api.NamespaceSystem)
+		framework.LogFailedContainers(c, api.NamespaceSystem)
+		framework.RunKubernetesServiceTestContainer(c, framework.TestContext.RepoRoot, api.NamespaceDefault)
 		framework.Failf("Error waiting for all pods to be running and ready: %v", err)
 	}
 
-	if err := framework.WaitForPodsSuccess(api.NamespaceSystem, framework.ImagePullerLabels, imagePrePullingTimeout); err != nil {
+	if err := framework.WaitForPodsSuccess(c, api.NamespaceSystem, framework.ImagePullerLabels, imagePrePullingTimeout); err != nil {
 		// There is no guarantee that the image pulling will succeed in 3 minutes
 		// and we don't even run the image puller on all platforms (including GKE).
 		// We wait for it so we get an indication of failures in the logs, and to
@@ -149,6 +149,11 @@ var _ = ginkgo.SynchronizedBeforeSuite(func() []byte {
 }, func(data []byte) {
 	// Run on all Ginkgo nodes
 
+	if cloudConfig.Provider == nil {
+		if err := setupProviderConfig(); err != nil {
+			framework.Failf("Failed to setup provider config: %v", err)
+		}
+	}
 })
 
 type CleanupActionHandle *int
@@ -215,12 +220,6 @@ func RunE2ETests(t *testing.T) {
 	runtime.ReallyCrash = true
 	util.InitLogs()
 	defer util.FlushLogs()
-
-	// We must call setupProviderConfig first since SynchronizedBeforeSuite needs
-	// cloudConfig to be set up already.
-	if err := setupProviderConfig(); err != nil {
-		glog.Fatalf(err.Error())
-	}
 
 	gomega.RegisterFailHandler(ginkgo.Fail)
 	// Disable skipped tests unless they are explicitly requested.

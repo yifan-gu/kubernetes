@@ -59,6 +59,7 @@ for (( i=0; i<${#NODE_NAMES[@]}; i++)); do
   fi
 done
 
+enable-accounting
 prepare-package-manager
 
 # Configure network
@@ -83,3 +84,5 @@ add-volume-support
 
 run-salt
 
+dnf install -y socat ethtool
+dnf update -y docker

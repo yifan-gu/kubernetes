@@ -30,12 +30,14 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	goRuntime "runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	unversionedfederation "k8s.io/kubernetes/federation/client/clientset_generated/federation_internalclientset/typed/federation/unversioned"
 	"k8s.io/kubernetes/pkg/api"
 	apierrs "k8s.io/kubernetes/pkg/api/errors"
 	"k8s.io/kubernetes/pkg/api/resource"
@@ -128,11 +130,57 @@ const (
 
 	// How long claims have to become dynamically provisioned
 	ClaimProvisionTimeout = 5 * time.Minute
+
+	// When these values are updated, also update cmd/kubelet/app/options/options.go
+	currentPodInfraContainerImageName    = "gcr.io/google_containers/pause"
+	currentPodInfraContainerImageVersion = "3.0"
+
+	// How long each node is given during a process that restarts all nodes
+	// before the test is considered failed. (Note that the total time to
+	// restart all nodes will be this number times the number of nodes.)
+	RestartPerNodeTimeout = 5 * time.Minute
+
+	// How often to Poll the statues of a restart.
+	RestartPoll = 20 * time.Second
+
+	// How long a node is allowed to become "Ready" after it is restarted before
+	// the test is considered failed.
+	RestartNodeReadyAgainTimeout = 5 * time.Minute
+
+	// How long a pod is allowed to become "running" and "ready" after a node
+	// restart before test is considered failed.
+	RestartPodReadyAgainTimeout = 5 * time.Minute
 )
 
 // Label allocated to the image puller static pod that runs on each node
 // before e2es.
 var ImagePullerLabels = map[string]string{"name": "e2e-image-puller"}
+
+// GetServerArchitecture fetches the architecture of the cluster's apiserver.
+func GetServerArchitecture(c *client.Client) string {
+	arch := ""
+	sVer, err := c.Discovery().ServerVersion()
+	if err != nil || sVer.Platform == "" {
+		// If we failed to get the server version for some reason, default to amd64.
+		arch = "amd64"
+	} else {
+		// Split the platform string into OS and Arch separately.
+		// The platform string may for example be "linux/amd64", "linux/arm" or "windows/amd64".
+		osArchArray := strings.Split(sVer.Platform, "/")
+		arch = osArchArray[1]
+	}
+	return arch
+}
+
+// GetPauseImageName fetches the pause image name for the same architecture as the apiserver.
+func GetPauseImageName(c *client.Client) string {
+	return currentPodInfraContainerImageName + "-" + GetServerArchitecture(c) + ":" + currentPodInfraContainerImageVersion
+}
+
+// GetPauseImageNameForHostArch fetches the pause image name for the same architecture the test is running on.
+func GetPauseImageNameForHostArch() string {
+	return currentPodInfraContainerImageName + "-" + goRuntime.GOARCH + ":" + currentPodInfraContainerImageVersion
+}
 
 // SubResource proxy should have been functional in v1.0.0, but SubResource
 // proxy via tunneling is known to be broken in v1.0.  See
@@ -223,12 +271,16 @@ type RCConfig struct {
 	MemRequest     int64 // bytes
 	MemLimit       int64 // bytes
 	ReadinessProbe *api.Probe
+	DNSPolicy      *api.DNSPolicy
 
 	// Env vars, set the same for every pod.
 	Env map[string]string
 
 	// Extra labels added to every pod.
 	Labels map[string]string
+
+	// Node selector for pods in the RC.
+	NodeSelector map[string]string
 
 	// Ports to declare in the container (map of name to containerPort).
 	Ports map[string]int
@@ -325,6 +377,23 @@ func SkipUnlessServerVersionGTE(v semver.Version, c discovery.ServerVersionInter
 	}
 }
 
+// Detects whether the federation namespace exists in the underlying cluster
+func SkipUnlessFederated(c *client.Client) {
+	federationNS := os.Getenv("FEDERATION_NAMESPACE")
+	if federationNS == "" {
+		federationNS = "federation-e2e"
+	}
+
+	_, err := c.Namespaces().Get(federationNS)
+	if err != nil {
+		if apierrs.IsNotFound(err) {
+			Skipf("Could not find federation namespace %s: skipping federated test", federationNS)
+		} else {
+			Failf("Unexpected error getting namespace: %v", err)
+		}
+	}
+}
+
 // ProvidersWithSSH are those providers where each node is accessible with SSH
 var ProvidersWithSSH = []string{"gce", "gke", "aws"}
 
@@ -396,6 +465,14 @@ func PodRunningReady(p *api.Pod) (bool, error) {
 	return true, nil
 }
 
+func PodRunningReadyOrSucceeded(p *api.Pod) (bool, error) {
+	// Check if the phase is succeeded.
+	if p.Status.Phase == api.PodSucceeded {
+		return true, nil
+	}
+	return PodRunningReady(p)
+}
+
 // PodNotReady checks whether pod p's has a ready condition of status false.
 func PodNotReady(p *api.Pod) (bool, error) {
 	// Check the ready condition is false.
@@ -420,11 +497,7 @@ func hasReplicationControllersForPod(rcs *api.ReplicationControllerList, pod api
 // WaitForPodsSuccess waits till all labels matching the given selector enter
 // the Success state. The caller is expected to only invoke this method once the
 // pods have been created.
-func WaitForPodsSuccess(ns string, successPodLabels map[string]string, timeout time.Duration) error {
-	c, err := LoadClient()
-	if err != nil {
-		return err
-	}
+func WaitForPodsSuccess(c *client.Client, ns string, successPodLabels map[string]string, timeout time.Duration) error {
 	successPodSelector := labels.SelectorFromSet(successPodLabels)
 	start, badPods := time.Now(), []api.Pod{}
 
@@ -471,11 +544,7 @@ func WaitForPodsSuccess(ns string, successPodLabels map[string]string, timeout t
 // returned even if there are minPods pods, some of which are in Running/Ready
 // and some in Success. This is to allow the client to decide if "Success"
 // means "Ready" or not.
-func WaitForPodsRunningReady(ns string, minPods int32, timeout time.Duration, ignoreLabels map[string]string) error {
-	c, err := LoadClient()
-	if err != nil {
-		return err
-	}
+func WaitForPodsRunningReady(c *client.Client, ns string, minPods int32, timeout time.Duration, ignoreLabels map[string]string) error {
 	ignoreSelector := labels.SelectorFromSet(ignoreLabels)
 	start := time.Now()
 	Logf("Waiting up to %v for all pods (need at least %d) in namespace '%s' to be running and ready",
@@ -556,12 +625,7 @@ func podFromManifest(filename string) (*api.Pod, error) {
 
 // Run a test container to try and contact the Kubernetes api-server from a pod, wait for it
 // to flip to Ready, log its output and delete it.
-func RunKubernetesServiceTestContainer(repoRoot string, ns string) {
-	c, err := LoadClient()
-	if err != nil {
-		Logf("Failed to load client")
-		return
-	}
+func RunKubernetesServiceTestContainer(c *client.Client, repoRoot string, ns string) {
 	path := filepath.Join(repoRoot, "test", "images", "clusterapi-tester", "pod.yaml")
 	p, err := podFromManifest(path)
 	if err != nil {
@@ -605,12 +669,7 @@ func kubectlLogPod(c *client.Client, pod api.Pod) {
 	}
 }
 
-func LogFailedContainers(ns string) {
-	c, err := LoadClient()
-	if err != nil {
-		Logf("Failed to load client")
-		return
-	}
+func LogFailedContainers(c *client.Client, ns string) {
 	podList, err := c.Pods(ns).List(api.ListOptions{})
 	if err != nil {
 		Logf("Error getting pods in namespace '%s': %v", ns, err)
@@ -1521,22 +1580,42 @@ func ServiceResponding(c *client.Client, ns, name string) error {
 	})
 }
 
-func LoadConfig() (*restclient.Config, error) {
-	switch {
-	case TestContext.KubeConfig != "":
-		Logf(">>> TestContext.KubeConfig: %s\n", TestContext.KubeConfig)
-		c, err := clientcmd.LoadFromFile(TestContext.KubeConfig)
-		if err != nil {
-			return nil, fmt.Errorf("error loading KubeConfig: %v", err.Error())
-		}
-		if TestContext.KubeContext != "" {
-			Logf(">>> TestContext.KubeContext: %s\n", TestContext.KubeContext)
-			c.CurrentContext = TestContext.KubeContext
-		}
-		return clientcmd.NewDefaultClientConfig(*c, &clientcmd.ConfigOverrides{ClusterInfo: clientcmdapi.Cluster{Server: TestContext.Host}}).ClientConfig()
-	default:
+func restclientConfig(kubeContext string) (*clientcmdapi.Config, error) {
+	Logf(">>> kubeConfig: %s\n", TestContext.KubeConfig)
+	if TestContext.KubeConfig == "" {
 		return nil, fmt.Errorf("KubeConfig must be specified to load client config")
 	}
+	c, err := clientcmd.LoadFromFile(TestContext.KubeConfig)
+	if err != nil {
+		return nil, fmt.Errorf("error loading KubeConfig: %v", err.Error())
+	}
+	if kubeContext != "" {
+		Logf(">>> kubeContext: %s\n", kubeContext)
+		c.CurrentContext = kubeContext
+	}
+	return c, nil
+}
+
+func LoadConfig() (*restclient.Config, error) {
+	c, err := restclientConfig(TestContext.KubeContext)
+	if err != nil {
+		return nil, err
+	}
+
+	return clientcmd.NewDefaultClientConfig(*c, &clientcmd.ConfigOverrides{ClusterInfo: clientcmdapi.Cluster{Server: TestContext.Host}}).ClientConfig()
+}
+
+func LoadFederatedConfig() (*restclient.Config, error) {
+	c, err := restclientConfig(federatedKubeContext)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := clientcmd.NewDefaultClientConfig(*c, &clientcmd.ConfigOverrides{}).ClientConfig()
+	if cfg != nil {
+		//TODO(colhom): this is only here because https://github.com/kubernetes/kubernetes/issues/25422
+		cfg.NegotiatedSerializer = api.Codecs
+	}
+	return cfg, err
 }
 
 func loadClientFromConfig(config *restclient.Config) (*client.Client, error) {
@@ -1548,6 +1627,25 @@ func loadClientFromConfig(config *restclient.Config) (*client.Client, error) {
 		c.Client.Timeout = SingleCallTimeout
 	}
 	return c, nil
+}
+
+func loadFederationClientFromConfig(config *restclient.Config) (*unversionedfederation.FederationClient, error) {
+	c, err := unversionedfederation.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("error creating client: %v", err.Error())
+	}
+	if c.Client.Timeout == 0 {
+		c.Client.Timeout = SingleCallTimeout
+	}
+	return c, nil
+}
+
+func LoadFederationClient() (*unversionedfederation.FederationClient, error) {
+	config, err := LoadFederatedConfig()
+	if err != nil {
+		return nil, fmt.Errorf("error creating client: %v", err.Error())
+	}
+	return loadFederationClientFromConfig(config)
 }
 
 func LoadClient() (*client.Client, error) {
@@ -2064,6 +2162,10 @@ func RunRC(config RCConfig) error {
 
 func (config *RCConfig) create() error {
 	By(fmt.Sprintf("creating replication controller %s in namespace %s", config.Name, config.Namespace))
+	dnsDefault := api.DNSDefault
+	if config.DNSPolicy == nil {
+		config.DNSPolicy = &dnsDefault
+	}
 	rc := &api.ReplicationController{
 		ObjectMeta: api.ObjectMeta{
 			Name: config.Name,
@@ -2087,7 +2189,8 @@ func (config *RCConfig) create() error {
 							ReadinessProbe: config.ReadinessProbe,
 						},
 					},
-					DNSPolicy: api.DNSDefault,
+					DNSPolicy:    *config.DNSPolicy,
+					NodeSelector: config.NodeSelector,
 				},
 			},
 		},
@@ -2113,6 +2216,12 @@ func (config *RCConfig) applyTo(template *api.PodTemplateSpec) {
 	if config.Labels != nil {
 		for k, v := range config.Labels {
 			template.ObjectMeta.Labels[k] = v
+		}
+	}
+	if config.NodeSelector != nil {
+		template.Spec.NodeSelector = make(map[string]string)
+		for k, v := range config.NodeSelector {
+			template.Spec.NodeSelector[k] = v
 		}
 	}
 	if config.Ports != nil {
@@ -2265,7 +2374,7 @@ func (config *RCConfig) start() error {
 		if startupStatus.FailedContainers > maxContainerFailures {
 			DumpNodeDebugInfo(config.Client, startupStatus.ContainerRestartNodes.List())
 			// Get the logs from the failed containers to help diagnose what caused them to fail
-			LogFailedContainers(config.Namespace)
+			LogFailedContainers(config.Client, config.Namespace)
 			return fmt.Errorf("%d containers failed which is more than allowed %d", startupStatus.FailedContainers, maxContainerFailures)
 		}
 		if len(pods) < len(oldPods) || len(pods) > config.Replicas {
@@ -2488,6 +2597,17 @@ func waitListSchedulableNodesOrDie(c *client.Client) *api.NodeList {
 	return nodes
 }
 
+// Node is schedulable if:
+// 1) doesn't have "unschedulable" field set
+// 2) it's Ready condition is set to true
+// 3) doesn't have NetworkUnavailable condition set to true
+func isNodeSchedulable(node *api.Node) bool {
+	nodeReady := IsNodeConditionSetAsExpected(node, api.NodeReady, true)
+	networkReady := IsNodeConditionUnset(node, api.NodeNetworkUnavailable) ||
+		IsNodeConditionSetAsExpected(node, api.NodeNetworkUnavailable, false)
+	return !node.Spec.Unschedulable && nodeReady && networkReady
+}
+
 // GetReadySchedulableNodesOrDie addresses the common use case of getting nodes you can do work on.
 // 1) Needs to be schedulable.
 // 2) Needs to be ready.
@@ -2497,9 +2617,30 @@ func GetReadySchedulableNodesOrDie(c *client.Client) (nodes *api.NodeList) {
 	// previous tests may have cause failures of some nodes. Let's skip
 	// 'Not Ready' nodes, just in case (there is no need to fail the test).
 	FilterNodes(nodes, func(node api.Node) bool {
-		return !node.Spec.Unschedulable && IsNodeConditionSetAsExpected(&node, api.NodeReady, true)
+		return isNodeSchedulable(&node)
 	})
 	return nodes
+}
+
+func WaitForAllNodesSchedulable(c *client.Client) error {
+	return wait.PollImmediate(30*time.Second, 2*time.Hour, func() (bool, error) {
+		opts := api.ListOptions{
+			ResourceVersion: "0",
+			FieldSelector:   fields.Set{"spec.unschedulable": "false"}.AsSelector(),
+		}
+		nodes, err := c.Nodes().List(opts)
+		if err != nil {
+			Logf("Unexpected error listing nodes: %v", err)
+			// Ignore the error here - it will be retried.
+			return false, nil
+		}
+		for _, node := range nodes.Items {
+			if !isNodeSchedulable(&node) {
+				return false, nil
+			}
+		}
+		return true, nil
+	})
 }
 
 func ScaleRC(c *client.Client, ns, name string, size uint, wait bool) error {
@@ -2723,11 +2864,7 @@ func WaitForDeploymentStatus(c clientset.Interface, ns, deploymentName string, d
 		if err != nil {
 			return false, err
 		}
-		oldRSs, allOldRSs, err = deploymentutil.GetOldReplicaSets(deployment, c)
-		if err != nil {
-			return false, err
-		}
-		newRS, err = deploymentutil.GetNewReplicaSet(deployment, c)
+		oldRSs, allOldRSs, newRS, err = deploymentutil.GetAllReplicaSets(deployment, c)
 		if err != nil {
 			return false, err
 		}
@@ -2894,11 +3031,11 @@ func WaitForDeploymentOldRSsNum(c *clientset.Clientset, ns, deploymentName strin
 }
 
 func logReplicaSetsOfDeployment(deployment *extensions.Deployment, allOldRSs []*extensions.ReplicaSet, newRS *extensions.ReplicaSet) {
-	Logf("Deployment: %+v. Selector = %+v", deployment, deployment.Spec.Selector)
+	Logf("Deployment: %+v. Selector = %+v", *deployment, deployment.Spec.Selector)
 	for i := range allOldRSs {
-		Logf("All old ReplicaSets (%d/%d) of deployment %s: %+v. Selector = %+v", i+1, len(allOldRSs), deployment.Name, allOldRSs[i], allOldRSs[i].Spec.Selector)
+		Logf("All old ReplicaSets (%d/%d) of deployment %s: %+v. Selector = %+v", i+1, len(allOldRSs), deployment.Name, *allOldRSs[i], allOldRSs[i].Spec.Selector)
 	}
-	Logf("New ReplicaSet of deployment %s: %+v. Selector = %+v", deployment.Name, newRS, newRS.Spec.Selector)
+	Logf("New ReplicaSet of deployment %s: %+v. Selector = %+v", deployment.Name, *newRS, newRS.Spec.Selector)
 }
 
 func WaitForObservedDeployment(c *clientset.Clientset, ns, deploymentName string, desiredGeneration int64) error {
@@ -3217,16 +3354,30 @@ func GetSigner(provider string) (ssh.Signer, error) {
 	return sshutil.MakePrivateKeySignerFromFile(key)
 }
 
-// checkPodsRunning returns whether all pods whose names are listed in podNames
-// in namespace ns are running and ready, using c and waiting at most timeout.
+// CheckPodsRunningReady returns whether all pods whose names are listed in
+// podNames in namespace ns are running and ready, using c and waiting at most
+// timeout.
 func CheckPodsRunningReady(c *client.Client, ns string, podNames []string, timeout time.Duration) bool {
-	np, desc := len(podNames), "running and ready"
+	return CheckPodsCondition(c, ns, podNames, timeout, PodRunningReady, "running and ready")
+}
+
+// CheckPodsRunningReadyOrSucceeded returns whether all pods whose names are
+// listed in podNames in namespace ns are running and ready, or succeeded; use
+// c and waiting at most timeout.
+func CheckPodsRunningReadyOrSucceeded(c *client.Client, ns string, podNames []string, timeout time.Duration) bool {
+	return CheckPodsCondition(c, ns, podNames, timeout, PodRunningReadyOrSucceeded, "running and ready, or succeeded")
+}
+
+// CheckPodsCondition returns whether all pods whose names are listed in podNames
+// in namespace ns are in the condition, using c and waiting at most timeout.
+func CheckPodsCondition(c *client.Client, ns string, podNames []string, timeout time.Duration, condition podCondition, desc string) bool {
+	np := len(podNames)
 	Logf("Waiting up to %v for %d pods to be %s: %s", timeout, np, desc, podNames)
 	result := make(chan bool, len(podNames))
 	for ix := range podNames {
 		// Launch off pod readiness checkers.
 		go func(name string) {
-			err := waitForPodCondition(c, ns, name, desc, timeout, PodRunningReady)
+			err := waitForPodCondition(c, ns, name, desc, timeout, condition)
 			result <- err == nil
 		}(podNames[ix])
 	}
@@ -3272,6 +3423,15 @@ func IsNodeConditionSetAsExpected(node *api.Node, conditionType api.NodeConditio
 	}
 	Logf("Couldn't find condition %v on node %v", conditionType, node.Name)
 	return false
+}
+
+func IsNodeConditionUnset(node *api.Node, conditionType api.NodeConditionType) bool {
+	for _, cond := range node.Status.Conditions {
+		if cond.Type == conditionType {
+			return false
+		}
+	}
+	return true
 }
 
 // WaitForNodeToBe returns whether node "name's" condition state matches wantTrue
@@ -3390,13 +3550,29 @@ func RestartKubeProxy(host string) error {
 	return nil
 }
 
-func RestartApiserver() error {
+func RestartApiserver(c *client.Client) error {
 	// TODO: Make it work for all providers.
 	if !ProviderIs("gce", "gke", "aws") {
 		return fmt.Errorf("unsupported provider: %s", TestContext.Provider)
 	}
+	if ProviderIs("gce", "aws") {
+		return sshRestartMaster()
+	}
+	// GKE doesn't allow ssh accesss, so use a same-version master
+	// upgrade to teardown/recreate master.
+	v, err := c.ServerVersion()
+	if err != nil {
+		return err
+	}
+	return masterUpgradeGKE(v.GitVersion[1:]) // strip leading 'v'
+}
+
+func sshRestartMaster() error {
+	if !ProviderIs("gce", "aws") {
+		return fmt.Errorf("unsupported provider: %s", TestContext.Provider)
+	}
 	var command string
-	if ProviderIs("gce", "gke") {
+	if ProviderIs("gce") {
 		command = "sudo docker ps | grep /kube-apiserver | cut -d ' ' -f 1 | xargs sudo docker kill"
 	} else {
 		command = "sudo /etc/init.d/kube-apiserver restart"
@@ -3995,4 +4171,58 @@ func UpdatePodWithRetries(client *client.Client, ns, name string, update func(*a
 		}
 	}
 	return nil, fmt.Errorf("Too many retries updating Pod %q", name)
+}
+
+func GetPodsInNamespace(c *client.Client, ns string, ignoreLabels map[string]string) ([]*api.Pod, error) {
+	pods, err := c.Pods(ns).List(api.ListOptions{})
+	if err != nil {
+		return []*api.Pod{}, err
+	}
+	ignoreSelector := labels.SelectorFromSet(ignoreLabels)
+	filtered := []*api.Pod{}
+	for _, p := range pods.Items {
+		if len(ignoreLabels) != 0 && ignoreSelector.Matches(labels.Set(p.Labels)) {
+			continue
+		}
+		filtered = append(filtered, &p)
+	}
+	return filtered, nil
+}
+
+// RunCmd runs cmd using args and returns its stdout and stderr. It also outputs
+// cmd's stdout and stderr to their respective OS streams.
+func RunCmd(command string, args ...string) (string, string, error) {
+	Logf("Running %s %v", command, args)
+	var bout, berr bytes.Buffer
+	cmd := exec.Command(command, args...)
+	// We also output to the OS stdout/stderr to aid in debugging in case cmd
+	// hangs and never returns before the test gets killed.
+	//
+	// This creates some ugly output because gcloud doesn't always provide
+	// newlines.
+	cmd.Stdout = io.MultiWriter(os.Stdout, &bout)
+	cmd.Stderr = io.MultiWriter(os.Stderr, &berr)
+	err := cmd.Run()
+	stdout, stderr := bout.String(), berr.String()
+	if err != nil {
+		return "", "", fmt.Errorf("error running %s %v; got error %v, stdout %q, stderr %q",
+			command, args, err, stdout, stderr)
+	}
+	return stdout, stderr, nil
+}
+
+// retryCmd runs cmd using args and retries it for up to SingleCallTimeout if
+// it returns an error. It returns stdout and stderr.
+func retryCmd(command string, args ...string) (string, string, error) {
+	var err error
+	stdout, stderr := "", ""
+	wait.Poll(Poll, SingleCallTimeout, func() (bool, error) {
+		stdout, stderr, err = RunCmd(command, args...)
+		if err != nil {
+			Logf("Got %v", err)
+			return false, nil
+		}
+		return true, nil
+	})
+	return stdout, stderr, err
 }
