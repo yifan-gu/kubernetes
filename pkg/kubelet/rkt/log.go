@@ -51,6 +51,8 @@ func processLines(lines []string, logOptions *api.PodLogOptions, stdout, stderr 
 		tss := strings.TrimSpace(line[:msgStart])
 		msg := strings.TrimPrefix(line[msgStart:], msgKey)
 
+		fmt.Println("timespaten!!!!!", tss)
+
 		t, err := time.Parse(journalTimestampLayout, tss)
 		if err != nil {
 			glog.Warningf("rkt: Failed to parse the timestamp %q: %v", tss, err)

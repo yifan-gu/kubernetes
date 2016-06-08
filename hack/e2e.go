@@ -53,7 +53,7 @@ var (
 )
 
 const (
-	minNodeCount = 2
+	minNodeCount = 1
 )
 
 func absOrDie(path string) string {
