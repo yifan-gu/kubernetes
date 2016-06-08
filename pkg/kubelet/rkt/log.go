@@ -33,14 +33,14 @@ import (
 )
 
 const (
-	// The layout of the time format that satisfies the `--since` option for journalctl.
-	// See man journalctl for more details.
 	journalTimestampLayout = "2006-01-02 15:04:05.000000 -0700 MST"
 )
 
 // processLines write the lines into stdout in the required format.
 func processLines(lines []string, logOptions *api.PodLogOptions, stdout, stderr io.Writer) {
 	msgKey := "MESSAGE="
+	fmt.Println("lines!!!!!", lines)
+
 	for _, line := range lines {
 		msgStart := strings.Index(line, msgKey)
 		if msgStart < 0 {
@@ -102,6 +102,8 @@ func (r *Runtime) GetContainerLogs(pod *api.Pod, containerID kubecontainer.Conta
 		getLogsRequest.Lines = int32(*logOptions.TailLines)
 	}
 
+	fmt.Println("!!! log request", getLogsRequest)
+
 	stream, err := r.apisvc.GetLogs(context.Background(), getLogsRequest)
 	if err != nil {
 		glog.Errorf("rkt: Failed to create log stream for pod %q: %v", format.Pod(pod), err)
@@ -111,6 +113,7 @@ func (r *Runtime) GetContainerLogs(pod *api.Pod, containerID kubecontainer.Conta
 	for {
 		log, err := stream.Recv()
 		if err == io.EOF {
+			fmt.Println("!!!break!!!")
 			break
 		}
 		if err != nil {

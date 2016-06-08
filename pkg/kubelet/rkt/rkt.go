@@ -908,6 +908,20 @@ func serviceFilePath(serviceName string) string {
 	return path.Join(systemdServiceDir, serviceName)
 }
 
+// shouldCreateNetns returns true if:
+// The pod does not run in host network. And
+// The pod runs inside a netns created outside of rkt.
+func (r *Runtime) shouldCreateNetns(pod *api.Pod) bool {
+	return !kubecontainer.IsHostNetworkPod(pod) && r.networkPlugin.Name() != network.DefaultPluginName
+}
+
+// usesRktHostNetwork returns true if:
+// The pod runs in the host network. Or
+// The pod runs inside a netns created outside of rkt.
+func (r *Runtime) usesRktHostNetwork(pod *api.Pod) bool {
+	return kubecontainer.IsHostNetworkPod(pod) || r.shouldCreateNetns(pod)
+}
+
 // generateRunCommand crafts a 'rkt run-prepared' command with necessary parameters.
 func (r *Runtime) generateRunCommand(pod *api.Pod, uuid, netnsName string) (string, error) {
 	runPrepared := buildCommand(r.config, "run-prepared").Args
@@ -928,7 +942,7 @@ func (r *Runtime) generateRunCommand(pod *api.Pod, uuid, netnsName string) (stri
 	}
 
 	// Apply '--net=host' to pod that is running on host network or inside a network namespace.
-	if kubecontainer.IsHostNetworkPod(pod) || r.networkPlugin.Name() != network.DefaultPluginName {
+	if r.usesRktHostNetwork(pod) {
 		runPrepared = append(runPrepared, "--net=host")
 	} else {
 		runPrepared = append(runPrepared, fmt.Sprintf("--net=%s", defaultNetworkName))
@@ -966,7 +980,7 @@ func (r *Runtime) generateRunCommand(pod *api.Pod, uuid, netnsName string) (stri
 	runPrepared = append(runPrepared, fmt.Sprintf("--hostname=%s", hostname))
 	runPrepared = append(runPrepared, uuid)
 
-	if !kubecontainer.IsHostNetworkPod(pod) && r.networkPlugin.Name() != network.DefaultPluginName {
+	if r.shouldCreateNetns(pod) {
 		// Drop the `rkt run-prepared` into the network namespace we
 		// created.
 		// TODO: switch to 'ip netns exec' once we can depend on a new
@@ -982,8 +996,8 @@ func (r *Runtime) generateRunCommand(pod *api.Pod, uuid, netnsName string) (stri
 func (r *Runtime) cleanupPodNetwork(pod *api.Pod) error {
 	glog.V(3).Infof("Calling network plugin %s to tear down pod for %s", r.networkPlugin.Name(), format.Pod(pod))
 
-	// No-op if the pod is running in host network or no-op network plugin.
-	if kubecontainer.IsHostNetworkPod(pod) || r.networkPlugin.Name() == network.DefaultPluginName {
+	// No-op if the netns is not created.
+	if !r.shouldCreateNetns(pod) {
 		return nil
 	}
 
@@ -1166,8 +1180,8 @@ func netnsPathFromName(netnsName string) string {
 func (r *Runtime) setupPodNetwork(pod *api.Pod) (string, string, error) {
 	glog.V(3).Infof("Calling network plugin %s to set up pod for %s", r.networkPlugin.Name(), format.Pod(pod))
 
-	// No-op if the pod is running in host network or no-op network plugin.
-	if kubecontainer.IsHostNetworkPod(pod) || r.networkPlugin.Name() == network.DefaultPluginName {
+	// No-op if the netns is not created.
+	if !r.shouldCreateNetns(pod) {
 		return "", "", nil
 	}
 

@@ -8,6 +8,6 @@ metadata:
 spec:
   containers:
   - name: nginx
-    image: nginx
+    image: redis
     ports:
     - containerPort: 80
