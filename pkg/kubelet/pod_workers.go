@@ -149,8 +149,11 @@ func newPodWorkers(syncPodFn syncPodFnType, recorder record.EventRecorder, workQ
 }
 
 func (p *podWorkers) managePodLoop(podUpdates <-chan UpdatePodOptions) {
+	fmt.Println("!!!pod_workers: manageloop")
+
 	var lastSyncTime time.Time
 	for update := range podUpdates {
+		fmt.Println("!!!pod_workers: manageloop update", update)
 		err := func() error {
 			podUID := update.Pod.UID
 			// This is a blocking call that would return only if the cache
@@ -191,6 +194,11 @@ func (p *podWorkers) managePodLoop(podUpdates <-chan UpdatePodOptions) {
 // If the options provide an OnCompleteFunc, the function is invoked if the update is accepted.
 // Update requests are ignored if a kill pod request is pending.
 func (p *podWorkers) UpdatePod(options *UpdatePodOptions) {
+	fmt.Println("!!!pod_workers: Update pod")
+	if options != nil && options.Pod != nil {
+		fmt.Println("!!!pod_workers option spec:", options.Pod.Spec)
+	}
+
 	pod := options.Pod
 	uid := pod.UID
 	var podUpdates chan UpdatePodOptions

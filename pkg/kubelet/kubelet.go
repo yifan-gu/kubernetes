@@ -1794,6 +1794,11 @@ func (kl *Kubelet) makePodDataDirs(pod *api.Pod) error {
 // If any step if this workflow errors, the error is returned, and is repeated
 // on the next syncPod call.
 func (kl *Kubelet) syncPod(o syncPodOptions) error {
+	fmt.Println("!!!kubelet syncpod syncpodoption")
+	if o.pod != nil {
+		fmt.Println("!!!kubelet options pod spec", o.pod.Spec)
+	}
+
 	// pull out the required options
 	pod := o.pod
 	mirrorPod := o.mirrorPod
@@ -2702,6 +2707,8 @@ func (kl *Kubelet) syncLoopIteration(configCh <-chan kubetypes.PodUpdate, handle
 // dispatchWork starts the asynchronous sync of the pod in a pod worker.
 // If the pod is terminated, dispatchWork
 func (kl *Kubelet) dispatchWork(pod *api.Pod, syncType kubetypes.SyncPodType, mirrorPod *api.Pod, start time.Time) {
+	fmt.Println("!!!kubelet dispatchwork", pod.Spec, syncType)
+
 	if kl.podIsTerminated(pod) {
 		if pod.DeletionTimestamp != nil {
 			// If the pod is in a terminated state, there is no pod worker to
@@ -2742,6 +2749,11 @@ func (kl *Kubelet) handleMirrorPod(mirrorPod *api.Pod, start time.Time) {
 // HandlePodAdditions is the callback in SyncHandler for pods being added from
 // a config source.
 func (kl *Kubelet) HandlePodAdditions(pods []*api.Pod) {
+	fmt.Println("!!!kubelet handle pods addition")
+	for _, p := range pods {
+		fmt.Println("!!!kubelet pod addition", p.Spec)
+	}
+
 	start := kl.clock.Now()
 	sort.Sort(podsByCreationTime(pods))
 	for _, pod := range pods {

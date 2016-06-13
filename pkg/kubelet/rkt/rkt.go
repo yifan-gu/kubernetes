@@ -1654,6 +1654,8 @@ func (r *Runtime) Status() error {
 
 // SyncPod syncs the running pod to match the specified desired pod.
 func (r *Runtime) SyncPod(pod *api.Pod, podStatus api.PodStatus, internalPodStatus *kubecontainer.PodStatus, pullSecrets []api.Secret, backOff *flowcontrol.Backoff) (result kubecontainer.PodSyncResult) {
+	fmt.Println("!!!rkt: syncpod: pod", pod.Spec)
+
 	var err error
 	defer func() {
 		if err != nil {
