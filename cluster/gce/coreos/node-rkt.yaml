@@ -36,7 +36,21 @@ coreos:
         RemainAfterExit=yes
         ExecStartPre=/usr/bin/mkdir -p /opt/cni
         ExecStartPre=/usr/bin/curl --fail --silent --show-error --location --create-dirs --output /opt/downloads/cni.tar.gz https://storage.googleapis.com/kubernetes-release/network-plugins/cni-c864f0e1ea73719b8f4582402b0847064f9883b0.tar.gz
-        ExecStart=/usr/bin/tar xf /opt/downloads/cni.tar.gz -C /opt/cni/        
+        ExecStart=/usr/bin/tar xf /opt/downloads/cni.tar.gz -C /opt/cni/
+
+    - name: kubernetes-install-bench-wrapper.service
+      command: start
+      content: |
+        [Unit]
+        Description=Download bench_wrapper
+        Requires=network-online.target
+        After=network-online.target
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStartPre=/usr/bin/mkdir -p /opt/bench_wrapper
+        ExecStartPre=/usr/bin/curl --fail --silent --show-error --location --create-dirs --output /opt/downloads/bench_wrapper.tar.gz https://storage.googleapis.com/rkt-bin/bench_wrapper.tar.gz
+        ExecStart=/usr/bin/tar --strip-components=1 -xf /opt/downloads/bench_wrapper.tar.gz -C /opt/bench_wrapper
 
     - name: kubernetes-install-rkt.service
       command: start
@@ -102,7 +116,7 @@ coreos:
         Requires=kubernetes-install-rkt.service
         After=kubernetes-install-rkt.service
         [Service]
-        ExecStart=/opt/rkt/rkt api-service
+        ExecStart=/opt/bench_wrapper/bench_wrapper --command="/opt/rkt/rkt api-service" --verbose=true
         Restart=always
         RestartSec=10
 
@@ -111,8 +125,8 @@ coreos:
       content: |
         [Unit]
         Description=Run Kubelet service
-        Requires=network-online.target kube-env.service kubernetes-download-manifests.service kubernetes-install-cni.service
-        After=network-online.target kube-env.service kubernetes-download-manifests.service kubernetes-install-cni.service
+        Requires=network-online.target kube-env.service kubernetes-download-manifests.service kubernetes-install-cni.service kubernetes-install-bench-wrapper.service
+        After=network-online.target kube-env.service kubernetes-download-manifests.service kubernetes-install-cni.service kubernetes-install-bench-wrapper.service
         [Service]
         EnvironmentFile=/etc/kube-env
         ExecStartPre=/usr/bin/curl --fail --silent --show-error \
@@ -121,7 +135,7 @@ coreos:
         http://metadata.google.internal/computeMetadata/v1/instance/attributes/configure-kubelet
         ExecStartPre=/usr/bin/chmod 0755 /run/configure-kubelet.sh
         ExecStartPre=/run/configure-kubelet.sh
-        ExecStart=/opt/kubernetes/server/bin/kubelet \
+        ExecStart=/opt/bench_wrapper/bench_wrapper --command="/opt/kubernetes/server/bin/kubelet \
         --api-servers=https://${INSTANCE_PREFIX}-master \
         --enable-debugging-handlers=true \
         --cloud-provider=gce \
@@ -136,7 +150,8 @@ coreos:
         --rkt-stage1-image=/opt/rkt/stage1-coreos.aci \
         --configure-cbr0=${KUBERNETES_CONFIGURE_CBR0} \
         --network-plugin=kubenet \
-        --reconcile-cidr=true
+        --reconcile-cidr=true" \
+        --verbose=true
         Restart=always
         RestartSec=10
         KillMode=process
