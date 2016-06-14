@@ -153,7 +153,7 @@ func (p *podWorkers) managePodLoop(podUpdates <-chan UpdatePodOptions) {
 
 	var lastSyncTime time.Time
 	for update := range podUpdates {
-		fmt.Println("!!!pod_workers: manageloop update", update)
+		fmt.Println("!!!pod_workers: manageloop update", update.Pod.Spec)
 		err := func() error {
 			podUID := update.Pod.UID
 			// This is a blocking call that would return only if the cache
@@ -165,6 +165,7 @@ func (p *podWorkers) managePodLoop(podUpdates <-chan UpdatePodOptions) {
 			if err != nil {
 				return err
 			}
+			fmt.Println("!!!pod_workers: ready to syncpod", update.Pod.Spec)
 			err = p.syncPodFn(syncPodOptions{
 				mirrorPod:      update.MirrorPod,
 				pod:            update.Pod,

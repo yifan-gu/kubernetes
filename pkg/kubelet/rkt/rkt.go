@@ -1497,7 +1497,15 @@ func (r *Runtime) convertRktPod(rktpod *rktapi.Pod) (*kubecontainer.Pod, error) 
 // If all is false, then only running pods will be returned, otherwise all pods will be
 // returned.
 func (r *Runtime) GetPods(all bool) ([]*kubecontainer.Pod, error) {
-	glog.V(4).Infof("Rkt getting pods")
+	// Convert map to list, using the consistent order from the podIDs array.
+	var result []*kubecontainer.Pod
+	glog.V(4).Infof("!!!Rkt getting pods")
+	defer func() {
+		fmt.Println("!!!Rkt getting pods return")
+		for _, p := range result {
+			fmt.Println("!!!result pod", p)
+		}
+	}()
 
 	listReq := &rktapi.ListPodsRequest{
 		Detail: true,
@@ -1515,10 +1523,13 @@ func (r *Runtime) GetPods(all bool) ([]*kubecontainer.Pod, error) {
 	if !all {
 		listReq.Filters[0].States = []rktapi.PodState{rktapi.PodState_POD_STATE_RUNNING}
 	}
+	fmt.Println("!!!rkt list pods", listReq)
+
 	listResp, err := r.apisvc.ListPods(context.Background(), listReq)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't list pods: %v", err)
 	}
+	fmt.Println("!!!rkt list pods done")
 
 	pods := make(map[kubetypes.UID]*kubecontainer.Pod)
 	var podIDs []kubetypes.UID
@@ -1540,8 +1551,6 @@ func (r *Runtime) GetPods(all bool) ([]*kubecontainer.Pod, error) {
 		oldPod.Containers = append(oldPod.Containers, pod.Containers...)
 	}
 
-	// Convert map to list, using the consistent order from the podIDs array.
-	var result []*kubecontainer.Pod
 	for _, id := range podIDs {
 		result = append(result, pods[id])
 	}
