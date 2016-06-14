@@ -43,7 +43,7 @@ func ProbeVolumePlugins(volumeConfig volume.VolumeConfig) []volume.VolumePlugin 
 	}
 }
 
-func ProbeRecyclableVolumePlugins(recyclerFunc func(spec *volume.Spec, host volume.VolumeHost, volumeConfig volume.VolumeConfig) (volume.Recycler, error), volumeConfig volume.VolumeConfig) []volume.VolumePlugin {
+func ProbeRecyclableVolumePlugins(recyclerFunc func(pvName string, spec *volume.Spec, host volume.VolumeHost, volumeConfig volume.VolumeConfig) (volume.Recycler, error), volumeConfig volume.VolumeConfig) []volume.VolumePlugin {
 	return []volume.VolumePlugin{
 		&hostPathPlugin{
 			host:               nil,
@@ -57,7 +57,7 @@ func ProbeRecyclableVolumePlugins(recyclerFunc func(spec *volume.Spec, host volu
 type hostPathPlugin struct {
 	host volume.VolumeHost
 	// decouple creating Recyclers/Deleters/Provisioners by deferring to a function.  Allows for easier testing.
-	newRecyclerFunc    func(spec *volume.Spec, host volume.VolumeHost, volumeConfig volume.VolumeConfig) (volume.Recycler, error)
+	newRecyclerFunc    func(pvName string, spec *volume.Spec, host volume.VolumeHost, volumeConfig volume.VolumeConfig) (volume.Recycler, error)
 	newDeleterFunc     func(spec *volume.Spec, host volume.VolumeHost) (volume.Deleter, error)
 	newProvisionerFunc func(options volume.VolumeOptions, host volume.VolumeHost) (volume.Provisioner, error)
 	config             volume.VolumeConfig
@@ -93,31 +93,30 @@ func (plugin *hostPathPlugin) GetAccessModes() []api.PersistentVolumeAccessMode 
 	}
 }
 
-func (plugin *hostPathPlugin) NewBuilder(spec *volume.Spec, pod *api.Pod, _ volume.VolumeOptions) (volume.Builder, error) {
+func (plugin *hostPathPlugin) NewMounter(spec *volume.Spec, pod *api.Pod, _ volume.VolumeOptions) (volume.Mounter, error) {
 	if spec.Volume != nil && spec.Volume.HostPath != nil {
 		path := spec.Volume.HostPath.Path
-		return &hostPathBuilder{
-			hostPath: &hostPath{path: path, MetricsProvider: volume.NewMetricsDu(path)},
+		return &hostPathMounter{
+			hostPath: &hostPath{path: path},
 			readOnly: false,
 		}, nil
 	} else {
 		path := spec.PersistentVolume.Spec.HostPath.Path
-		return &hostPathBuilder{
-			hostPath: &hostPath{path: path, MetricsProvider: volume.NewMetricsDu(path)},
+		return &hostPathMounter{
+			hostPath: &hostPath{path: path},
 			readOnly: spec.ReadOnly,
 		}, nil
 	}
 }
 
-func (plugin *hostPathPlugin) NewCleaner(volName string, podUID types.UID) (volume.Cleaner, error) {
-	return &hostPathCleaner{&hostPath{
-		path:            "",
-		MetricsProvider: volume.NewMetricsDu(""),
+func (plugin *hostPathPlugin) NewUnmounter(volName string, podUID types.UID) (volume.Unmounter, error) {
+	return &hostPathUnmounter{&hostPath{
+		path: "",
 	}}, nil
 }
 
-func (plugin *hostPathPlugin) NewRecycler(spec *volume.Spec) (volume.Recycler, error) {
-	return plugin.newRecyclerFunc(spec, plugin.host, plugin.config)
+func (plugin *hostPathPlugin) NewRecycler(pvName string, spec *volume.Spec) (volume.Recycler, error) {
+	return plugin.newRecyclerFunc(pvName, spec, plugin.host, plugin.config)
 }
 
 func (plugin *hostPathPlugin) NewDeleter(spec *volume.Spec) (volume.Deleter, error) {
@@ -131,18 +130,18 @@ func (plugin *hostPathPlugin) NewProvisioner(options volume.VolumeOptions) (volu
 	return plugin.newProvisionerFunc(options, plugin.host)
 }
 
-func newRecycler(spec *volume.Spec, host volume.VolumeHost, config volume.VolumeConfig) (volume.Recycler, error) {
+func newRecycler(pvName string, spec *volume.Spec, host volume.VolumeHost, config volume.VolumeConfig) (volume.Recycler, error) {
 	if spec.PersistentVolume == nil || spec.PersistentVolume.Spec.HostPath == nil {
 		return nil, fmt.Errorf("spec.PersistentVolumeSource.HostPath is nil")
 	}
 	path := spec.PersistentVolume.Spec.HostPath.Path
 	return &hostPathRecycler{
-		name:            spec.Name(),
-		path:            path,
-		host:            host,
-		config:          config,
-		timeout:         volume.CalculateTimeoutForVolume(config.RecyclerMinimumTimeout, config.RecyclerTimeoutIncrement, spec.PersistentVolume),
-		MetricsProvider: volume.NewMetricsDu(path),
+		name:    spec.Name(),
+		path:    path,
+		host:    host,
+		config:  config,
+		timeout: volume.CalculateTimeoutForVolume(config.RecyclerMinimumTimeout, config.RecyclerTimeoutIncrement, spec.PersistentVolume),
+		pvName:  pvName,
 	}, nil
 }
 
@@ -151,7 +150,7 @@ func newDeleter(spec *volume.Spec, host volume.VolumeHost) (volume.Deleter, erro
 		return nil, fmt.Errorf("spec.PersistentVolumeSource.HostPath is nil")
 	}
 	path := spec.PersistentVolume.Spec.HostPath.Path
-	return &hostPathDeleter{spec.Name(), path, host, volume.NewMetricsDu(path)}, nil
+	return &hostPathDeleter{name: spec.Name(), path: path, host: host}, nil
 }
 
 func newProvisioner(options volume.VolumeOptions, host volume.VolumeHost) (volume.Provisioner, error) {
@@ -162,21 +161,21 @@ func newProvisioner(options volume.VolumeOptions, host volume.VolumeHost) (volum
 // The direct at the specified path will be directly exposed to the container.
 type hostPath struct {
 	path string
-	volume.MetricsProvider
+	volume.MetricsNil
 }
 
 func (hp *hostPath) GetPath() string {
 	return hp.path
 }
 
-type hostPathBuilder struct {
+type hostPathMounter struct {
 	*hostPath
 	readOnly bool
 }
 
-var _ volume.Builder = &hostPathBuilder{}
+var _ volume.Mounter = &hostPathMounter{}
 
-func (b *hostPathBuilder) GetAttributes() volume.Attributes {
+func (b *hostPathMounter) GetAttributes() volume.Attributes {
 	return volume.Attributes{
 		ReadOnly:        b.readOnly,
 		Managed:         false,
@@ -185,32 +184,32 @@ func (b *hostPathBuilder) GetAttributes() volume.Attributes {
 }
 
 // SetUp does nothing.
-func (b *hostPathBuilder) SetUp(fsGroup *int64) error {
+func (b *hostPathMounter) SetUp(fsGroup *int64) error {
 	return nil
 }
 
 // SetUpAt does not make sense for host paths - probably programmer error.
-func (b *hostPathBuilder) SetUpAt(dir string, fsGroup *int64) error {
+func (b *hostPathMounter) SetUpAt(dir string, fsGroup *int64) error {
 	return fmt.Errorf("SetUpAt() does not make sense for host paths")
 }
 
-func (b *hostPathBuilder) GetPath() string {
+func (b *hostPathMounter) GetPath() string {
 	return b.path
 }
 
-type hostPathCleaner struct {
+type hostPathUnmounter struct {
 	*hostPath
 }
 
-var _ volume.Cleaner = &hostPathCleaner{}
+var _ volume.Unmounter = &hostPathUnmounter{}
 
 // TearDown does nothing.
-func (c *hostPathCleaner) TearDown() error {
+func (c *hostPathUnmounter) TearDown() error {
 	return nil
 }
 
 // TearDownAt does not make sense for host paths - probably programmer error.
-func (c *hostPathCleaner) TearDownAt(dir string) error {
+func (c *hostPathUnmounter) TearDownAt(dir string) error {
 	return fmt.Errorf("TearDownAt() does not make sense for host paths")
 }
 
@@ -222,7 +221,8 @@ type hostPathRecycler struct {
 	host    volume.VolumeHost
 	config  volume.VolumeConfig
 	timeout int64
-	volume.MetricsProvider
+	volume.MetricsNil
+	pvName string
 }
 
 func (r *hostPathRecycler) GetPath() string {
@@ -236,13 +236,12 @@ func (r *hostPathRecycler) Recycle() error {
 	pod := r.config.RecyclerPodTemplate
 	// overrides
 	pod.Spec.ActiveDeadlineSeconds = &r.timeout
-	pod.GenerateName = "pv-recycler-hostpath-"
 	pod.Spec.Volumes[0].VolumeSource = api.VolumeSource{
 		HostPath: &api.HostPathVolumeSource{
 			Path: r.path,
 		},
 	}
-	return volume.RecycleVolumeByWatchingPodUntilCompletion(pod, r.host.GetKubeClient())
+	return volume.RecycleVolumeByWatchingPodUntilCompletion(r.pvName, pod, r.host.GetKubeClient())
 }
 
 // hostPathProvisioner implements a Provisioner for the HostPath plugin
@@ -254,18 +253,12 @@ type hostPathProvisioner struct {
 
 // Create for hostPath simply creates a local /tmp/hostpath_pv/%s directory as a new PersistentVolume.
 // This Provisioner is meant for development and testing only and WILL NOT WORK in a multi-node cluster.
-func (r *hostPathProvisioner) Provision(pv *api.PersistentVolume) error {
-	if pv.Spec.HostPath == nil {
-		return fmt.Errorf("pv.Spec.HostPath cannot be nil")
-	}
-	return os.MkdirAll(pv.Spec.HostPath.Path, 0750)
-}
-
-func (r *hostPathProvisioner) NewPersistentVolumeTemplate() (*api.PersistentVolume, error) {
+func (r *hostPathProvisioner) Provision() (*api.PersistentVolume, error) {
 	fullpath := fmt.Sprintf("/tmp/hostpath_pv/%s", util.NewUUID())
-	return &api.PersistentVolume{
+
+	pv := &api.PersistentVolume{
 		ObjectMeta: api.ObjectMeta{
-			GenerateName: "pv-hostpath-",
+			Name: r.options.PVName,
 			Annotations: map[string]string{
 				"kubernetes.io/createdby": "hostpath-dynamic-provisioner",
 			},
@@ -282,7 +275,9 @@ func (r *hostPathProvisioner) NewPersistentVolumeTemplate() (*api.PersistentVolu
 				},
 			},
 		},
-	}, nil
+	}
+
+	return pv, os.MkdirAll(pv.Spec.HostPath.Path, 0750)
 }
 
 // hostPathDeleter deletes a hostPath PV from the cluster.
@@ -291,7 +286,7 @@ type hostPathDeleter struct {
 	name string
 	path string
 	host volume.VolumeHost
-	volume.MetricsProvider
+	volume.MetricsNil
 }
 
 func (r *hostPathDeleter) GetPath() string {

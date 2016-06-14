@@ -20,6 +20,7 @@
 
 ZONE="${ZONE:-us-central1-f}"
 NUM_NODES="${NUM_NODES:-3}"
+ADDITIONAL_ZONES="${ADDITIONAL_ZONES:-}"
 CLUSTER_API_VERSION="${CLUSTER_API_VERSION:-}"
 NETWORK="${NETWORK:-default}"
 NETWORK_RANGE="${NETWORK_RANGE:-10.240.0.0/16}"
@@ -29,6 +30,7 @@ CMD_GROUP="${CMD_GROUP:-}"
 GCLOUD_CONFIG_DIR="${GCLOUD_CONFIG_DIR:-${HOME}/.config/gcloud/kubernetes}"
 NODE_SCOPES="${NODE_SCOPES:-"compute-rw,storage-ro"}"
 MACHINE_TYPE="${MACHINE_TYPE:-n1-standard-2}"
+IMAGE_TYPE="${IMAGE_TYPE:-}"
 
 # WARNING: any new vars added here must correspond to options that can be
 # passed to `gcloud {CMD_GROUP} container clusters create`, or they will

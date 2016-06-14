@@ -28,13 +28,11 @@ set -x
 
 . $1
 
-if [ "$INSTALL_GODEP" = true ] ; then
-  go get -u github.com/tools/godep
-  go get -u github.com/onsi/ginkgo/ginkgo
-  go get -u github.com/onsi/gomega
-fi
-
-godep go build test/e2e_node/environment/conformance.go
-godep go run test/e2e_node/runner/run_e2e.go  --logtostderr --vmodule=*=2 --ssh-env="gce" \
-  --zone="$GCE_ZONE" --project="$GCE_PROJECT"  \
-  --hosts="$GCE_HOSTS" --images="$GCE_IMAGES" --cleanup="$CLEANUP"
+go build test/e2e_node/environment/conformance.go
+ARTIFACTS=${WORKSPACE}/_artifacts
+mkdir -p ${ARTIFACTS}
+go run test/e2e_node/runner/run_e2e.go  --logtostderr --vmodule=*=2 --ssh-env="gce" \
+  --zone="$GCE_ZONE" --project="$GCE_PROJECT" --image-project="$GCE_IMAGE_PROJECT" \
+  --hosts="$GCE_HOSTS" --images="$GCE_IMAGES" --cleanup="$CLEANUP" \
+  --results-dir="$ARTIFACTS" --ginkgo-flags="$GINKGO_FLAGS" \
+  --setup-node="$SETUP_NODE"

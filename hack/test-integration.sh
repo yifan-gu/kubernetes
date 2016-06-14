@@ -29,10 +29,12 @@ source "${KUBE_ROOT}/hack/lib/init.sh"
 # "v1,compute/v1alpha1,experimental/v1alpha2;v1,compute/v2,experimental/v1alpha3"
 # TODO: It's going to be:
 # KUBE_TEST_API_VERSIONS=${KUBE_TEST_API_VERSIONS:-"v1,extensions/v1beta1"}
-KUBE_TEST_API_VERSIONS=${KUBE_TEST_API_VERSIONS:-"v1,extensions/v1beta1;v1,autoscaling/v1,batch/v1,extensions/v1beta1"}
+KUBE_TEST_API_VERSIONS=${KUBE_TEST_API_VERSIONS:-"v1,extensions/v1beta1;v1,autoscaling/v1,batch/v1,apps/v1alpha1,policy/v1alpha1,extensions/v1beta1,rbac.authorization.k8s.io/v1alpha1"}
 
 # Give integration tests longer to run
-KUBE_TIMEOUT=${KUBE_TIMEOUT:--timeout 240s}
+# TODO: allow a larger value to be passed in
+#KUBE_TIMEOUT=${KUBE_TIMEOUT:--timeout 240s}
+KUBE_TIMEOUT="-timeout 600s"
 KUBE_INTEGRATION_TEST_MAX_CONCURRENCY=${KUBE_INTEGRATION_TEST_MAX_CONCURRENCY:-"-1"}
 LOG_LEVEL=${LOG_LEVEL:-2}
 
@@ -52,16 +54,11 @@ runTests() {
     KUBE_RACE="" \
     KUBE_TIMEOUT="${KUBE_TIMEOUT}" \
     KUBE_TEST_API_VERSIONS="$1" \
-    KUBE_API_VERSIONS="v1,autoscaling/v1,batch/v1,extensions/v1beta1" \
     "${KUBE_ROOT}/hack/test-go.sh" test/integration
 
   kube::log::status "Running integration test scenario with watch cache on"
-  KUBE_API_VERSIONS="v1,autoscaling/v1,batch/v1,extensions/v1beta1" KUBE_TEST_API_VERSIONS="$1" "${KUBE_OUTPUT_HOSTBIN}/integration" --v=${LOG_LEVEL} \
+  KUBE_TEST_API_VERSIONS="$1" "${KUBE_OUTPUT_HOSTBIN}/integration" --v=${LOG_LEVEL} \
     --max-concurrency="${KUBE_INTEGRATION_TEST_MAX_CONCURRENCY}" --watch-cache=true
-
-  kube::log::status "Running integration test scenario with watch cache off"
-  KUBE_API_VERSIONS="v1,autoscaling/v1,batch/v1,extensions/v1beta1" KUBE_TEST_API_VERSIONS="$1" "${KUBE_OUTPUT_HOSTBIN}/integration" --v=${LOG_LEVEL} \
-    --max-concurrency="${KUBE_INTEGRATION_TEST_MAX_CONCURRENCY}" --watch-cache=false
 
   cleanup
 }
@@ -77,7 +74,7 @@ checkEtcdOnPath() {
 checkEtcdOnPath
 
 
-KUBE_API_VERSIONS="v1,autoscaling/v1,batch/v1,extensions/v1beta1" "${KUBE_ROOT}/hack/build-go.sh" "$@" cmd/integration
+"${KUBE_ROOT}/hack/build-go.sh" "$@" cmd/integration
 
 # Run cleanup to stop etcd on interrupt or other kill signal.
 trap cleanup EXIT
