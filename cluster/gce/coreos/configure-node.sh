@@ -300,9 +300,8 @@ function load-docker-images() {
   done
 }
 
-
 function load-master-components-images() {
-  echo "Loading docker images for master components"
+  echo "Loading images for master components"
   export RKT_BIN=/opt/rkt/rkt
   export DOCKER2ACI_BIN=/opt/docker2aci/docker2aci
   ${SALT_DIR}/install.sh ${KUBE_BIN_TAR}

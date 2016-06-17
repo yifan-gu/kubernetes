@@ -1,5 +1,16 @@
 #cloud-config
 
+write_files:
+  - path: /etc/rkt/stage1.d/stage1-config.json
+    permissions: "0640"
+    content: |
+      {
+        "rktKind": "stage1",
+        "rktVersion": "v1",
+        "name": "coreos.com/stage1-coreos",
+        "version": "${RKT_VERSION}"
+      }
+
 coreos:
   update:
     reboot-strategy: off
@@ -167,7 +178,6 @@ coreos:
         --logtostderr=true \
         --container-runtime=rkt \
         --rkt-path=/opt/rkt/rkt \
-        --rkt-stage1-image=/opt/rkt/stage1-coreos.aci \
         --configure-cbr0=${KUBERNETES_CONFIGURE_CBR0} \
         --pod-cidr=${MASTER_IP_RANGE} \
         --register-schedulable=false \
