@@ -48,7 +48,7 @@ const (
 )
 
 // Maximum container failures this test tolerates before failing.
-var MaxContainerFailures = 0
+var MaxContainerFailures = 99999
 
 func density30AddonResourceVerifier(numNodes int) map[string]framework.ResourceConstraint {
 	var apiserverMem uint64
@@ -271,11 +271,11 @@ var _ = framework.KubeDescribe("Density", func() {
 
 	densityTests := []Density{
 		// TODO: Expose runLatencyTest as ginkgo flag.
-		{podsPerNode: 3, runLatencyTest: false, interval: 10 * time.Second},
-		{podsPerNode: 30, runLatencyTest: true, interval: 10 * time.Second},
-		{podsPerNode: 50, runLatencyTest: false, interval: 10 * time.Second},
-		{podsPerNode: 95, runLatencyTest: true, interval: 10 * time.Second},
-		{podsPerNode: 100, runLatencyTest: false, interval: 10 * time.Second},
+		//{podsPerNode: 3, runLatencyTest: false, interval: 10 * time.Second},
+		//{podsPerNode: 30, runLatencyTest: true, interval: 10 * time.Second},
+		//{podsPerNode: 50, runLatencyTest: false, interval: 10 * time.Second},
+		//{podsPerNode: 95, runLatencyTest: true, interval: 10 * time.Second},
+		{podsPerNode: 100, runLatencyTest: true, interval: 10 * time.Second},
 	}
 
 	for _, testArg := range densityTests {
@@ -308,8 +308,8 @@ var _ = framework.KubeDescribe("Density", func() {
 					PollInterval:         itArg.interval,
 					PodStatusFile:        fileHndl,
 					Replicas:             (totalPods + numberOrRCs - 1) / numberOrRCs,
-					CpuRequest:           nodeCpuCapacity / 100,
-					MemRequest:           nodeMemCapacity / 100,
+					CpuRequest:           nodeCpuCapacity / 120,
+					MemRequest:           nodeMemCapacity / 120,
 					MaxContainerFailures: &MaxContainerFailures,
 					Silent:               true,
 				}
@@ -409,6 +409,8 @@ var _ = framework.KubeDescribe("Density", func() {
 				}()
 			}
 			close(stop)
+                        framework.Logf("Sleeping 5 minutes")
+                        time.Sleep(5 * time.Minute)
 
 			if current != last {
 				framework.Logf("Warning: Not all events were recorded after waiting %.2f minutes", timeout.Minutes())

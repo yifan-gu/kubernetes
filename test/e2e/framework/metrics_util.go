@@ -41,7 +41,7 @@ const (
 	// NodeStartupThreshold is a rough estimate of the time allocated for a pod to start on a node.
 	NodeStartupThreshold = 4 * time.Second
 
-	podStartupThreshold time.Duration = 5 * time.Second
+	podStartupThreshold time.Duration = 10 * time.Second
 	// We are setting 1s threshold for apicalls even in small clusters to avoid flakes.
 	// The problem is that if long GC is happening in small clusters (where we have e.g.
 	// 1-core master machines) and tests are pretty short, it may consume significant
