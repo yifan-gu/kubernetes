@@ -31,13 +31,13 @@ import (
 const (
 	// TODO: move those label definitions to kubelet/types/labels.go
 	// TODO: change those label names to follow kubernetes's format
-	podDeletionGracePeriodLabel    = "io.kubernetes.pod.deletionGracePeriod"
-	podTerminationGracePeriodLabel = "io.kubernetes.pod.terminationGracePeriod"
+	podDeletionGracePeriodLabel    = "io.kubernetes.pod.deletion-grace-period"
+	podTerminationGracePeriodLabel = "io.kubernetes.pod.termination-grace-period"
 
 	containerHashLabel                   = "io.kubernetes.container.hash"
-	containerRestartCountLabel           = "io.kubernetes.container.restartCount"
-	containerTerminationMessagePathLabel = "io.kubernetes.container.terminationMessagePath"
-	containerPreStopHandlerLabel         = "io.kubernetes.container.preStopHandler"
+	containerRestartCountLabel           = "io.kubernetes.container.restart-count"
+	containerTerminationMessagePathLabel = "io.kubernetes.container.termination-message-path"
+	containerPreStopHandlerLabel         = "io.kubernetes.container.pre-stop-handler"
 	containerPortsLabel                  = "io.kubernetes.container.ports"
 
 	// kubernetesManagedLabel is used to distinguish whether a container/sandbox is managed by kubelet or not
