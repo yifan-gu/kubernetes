@@ -1,0 +1,13 @@
+apiVersion: "coreos.com/v1"
+kind: "ChannelOperatorConfig"
+metadata:
+  name: "default"
+  namespace: "tectonic-system"
+server: "https://public-update.staging.core-os.net"
+channel: "tectonic-1.5"
+publicKey: "gpg-public-key-override"
+appID: "1f650cdd-878d-4550-9013-6786be951696"
+automaticUpdate: false
+triggerUpdate: false
+updateCheckInterval: 3600 # seconds
+triggerUpdateCheck: false

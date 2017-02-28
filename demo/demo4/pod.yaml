@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: myweb
+  annotations:
+    pod.beta.kubernetes.io/init-containers: '[
+        {
+            "name": "my-init-container-a",
+            "image": "busybox",
+            "command": ["sh", "-c", "mkdir -p /tmp/created_by_init"],
+            "volumeMounts": [{"mountPath": "/tmp", "name": "test-volume"}]
+        },
+        {
+            "name": "my-init-container-b",
+            "image": "busybox",
+            "command": ["sh", "-c", "mkdir -p /var/created_by_init"]
+        }
+    ]'
+spec:
+  containers:
+  - name: nginx
+    image: nginx
+    ports:
+    - containerPort: 80
+    livenessProbe:
+      exec:
+        command:
+        - "ls"
+        - "/tmp/created_by_init"
+      initialDelaySeconds: 5
+      periodSeconds: 5
+    lifecycle:
+      postStart:
+        exec:
+          command:
+          - "touch"
+          - "/tmp/created_by_init/postStart"
+      preStop:
+        exec:
+          command:
+          - "touch"
+          - "/tmp/created_by_init/preStop"
+    volumeMounts:
+      - mountPath: /tmp
+        name: test-volume
+  volumes:
+  - name: test-volume
+    hostPath:
+      path: /tmp

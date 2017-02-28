@@ -1,0 +1,20 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: kube-version-operator
+  namespace: tectonic-system
+  labels:
+    k8s-app: kube-version-operator
+    managed-by-channel-operator: "true"
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        k8s-app: kube-version-operator
+    spec:
+      containers:
+      - name: kube-version-operator
+        image: quay.io/coreos/kube-version-operator:d982de152c9ed025c2b8a6acd7e8583ac5ec690c
+      imagePullSecrets:
+      - name: coreos-pull-secret

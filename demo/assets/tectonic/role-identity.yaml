@@ -1,0 +1,13 @@
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1alpha1
+metadata:
+  name: identity
+rules:
+  - apiGroups: ["oidc.coreos.com"]
+    resources: ["*"]
+    verbs: ["*"]
+    nonResourceURLs: []
+  - apiGroups: ["extensions"]
+    resources: ["thirdpartyresources"]
+    verbs: ["create"] # To manage its own resources identity must be able to create thirdpartyresources.
+    nonResourceURLs: []

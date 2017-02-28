@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tectonic-config
+  namespace: tectonic-system
+data:
+  certificatesStrategy: installerGeneratedCA
+  clusterID: a06e44e0-0776-47a3-a1c0-9b13e8508c8f
+  installerPlatform: tectonic-aws
+  tectonicUpdaterEnabled: "true"

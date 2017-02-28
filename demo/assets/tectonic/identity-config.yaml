@@ -1,0 +1,38 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: tectonic-identity
+  namespace: tectonic-system
+data:
+  config.yaml: |
+    issuer: https://yifan-test.staging.core-os.net/identity
+    storage:
+      type: kubernetes
+      config:
+        inCluster: true
+    web:
+      http: 0.0.0.0:5556
+    frontend:
+      theme: 'tectonic'
+      issuer: 'Tectonic Identity'
+    oauth2:
+      skipApprovalScreen: true
+    staticClients:
+    - id: tectonic-console
+      redirectURIs:
+      - 'https://yifan-test.staging.core-os.net/auth/callback'
+      name: 'Tectonic Console'
+      secret: 6NwTuT4lsCAltOuXb5hsyg
+    - id: tectonic-kubectl
+      public: true
+      trustedPeers:
+      - tectonic-console
+      name: 'Kubectl'
+      secret: bQpk5eVzI7_YijUAQ9NJfw
+    enablePasswordDB: true
+    staticPasswords:
+    - email: "yifan.gu@coreos.com"
+      hash: "$2a$12$HUFEIyU0znNQqiv6oQ4aTeZjDGO8N4xyFxRV3tPCShojUS1VfzCqi"
+      username: "admin"
+      userID: "8Yw8IXIZ3gEPlYVcLpJoGg"
+
